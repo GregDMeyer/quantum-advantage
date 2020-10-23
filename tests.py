@@ -3,7 +3,7 @@ import unittest
 
 from itertools import product
 import cirq
-from circuits import full_adder, add_int
+from circuits import full_adder, add_int, square
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
@@ -75,6 +75,34 @@ class TestArithmetic(unittest.TestCase):
                     
         with self.assertRaises(ValueError):
             add_int(c, b_reg, a_reg, ancillas)
+
+    def test_square(self):
+        n = 5
+        test_cases = range(2**n)
+
+        c = cirq.Circuit()
+        a_reg = cirq.NamedQubit.range(n, prefix="a")
+        b_reg = cirq.NamedQubit.range(2*n, prefix="b")
+        ancillas = AncillaManager()
+
+        with self.assertRaises(ValueError):
+            square(c, a_reg, a_reg, ancillas)
+        
+        square(c, a_reg, b_reg, ancillas)
+
+        sim = ToffoliSimulator(c)
+        
+        for a in test_cases:
+            with self.subTest(a=a):
+                state = int_to_state(a, a_reg)
+                state.update(int_to_state(0, b_reg))
+                state.update(ancillas.init_state())
+                sim.simulate(state)
+                ra = state_to_int(state, a_reg)
+                rb = state_to_int(state, b_reg)
+
+                self.assertEqual(ra, a)
+                self.assertEqual(rb, a**2)
 
 class TestAncillas(unittest.TestCase):
 

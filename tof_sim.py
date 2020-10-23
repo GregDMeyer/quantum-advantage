@@ -44,16 +44,15 @@ def int_to_state(x, reg):
     if x.bit_length() > len(reg):
         raise ValueError("integer too large for register")
 
-    n = len(reg)
     rtn = {
-        q : (x>>(n-i-1))&1 for i,q in enumerate(reg)
+        q : (x>>i)&1 for i,q in enumerate(reg)
     }
 
     return rtn
 
 def state_to_int(state, reg):
     rtn = 0
-    for q in reg:
+    for q in reg[::-1]:
         rtn <<= 1
         rtn |= state[q]
     return rtn
