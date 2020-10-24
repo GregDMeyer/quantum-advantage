@@ -3,7 +3,7 @@ import unittest
 
 from itertools import product
 import cirq
-from circuits import full_adder, half_adder, add_int, square
+from circuits import full_adder, half_adder, add_int, square, schoolbook_mult#, karatsuba_mult
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
@@ -126,6 +126,53 @@ class TestArithmetic(unittest.TestCase):
                     self.assertEqual(ra, a)
                     self.assertEqual(rb, b+a**2)
 
+    def test_mults(self):
+        n = 4
+        m = 5
+        test_cases = product(range(2**n), range(2**m))
+
+        mult_methods = [
+            ("schoolbook", schoolbook_mult),
+            #("karatsuba", karatsuba_mult)
+        ]
+        
+        for name, mult in mult_methods:
+            with self.subTest(mult_method=name):
+            
+                circ1 = cirq.Circuit()
+                circ2 = cirq.Circuit()
+
+                a_reg = cirq.NamedQubit.range(n, prefix="a")
+                b_reg = cirq.NamedQubit.range(m, prefix="b")
+                c_reg = cirq.NamedQubit.range(m+n, prefix="c")
+                ancillas = AncillaManager()
+
+                mult(circ1, a_reg, b_reg, c_reg, ancillas)
+                sim1 = ToffoliSimulator(circ1)
+
+                mult(circ2, a_reg, b_reg, c_reg, ancillas)
+                sim2 = ToffoliSimulator(circ2)
+
+                for a, b in test_cases:
+                    for c in (0, int(0.8122297*2**(n+m)), 2**(n+m)-1):
+                        for case, sim in ("n<m", sim1), ("n>m", sim2):
+                            with self.subTest(a=a, b=b, c=c, case=case):
+                                state = int_to_state(a, a_reg)
+                                state.update(int_to_state(b, b_reg))
+                                state.update(int_to_state(c, c_reg))
+                                state.update(ancillas.init_state())
+
+                                sim.simulate(state)
+                                
+                                ra = state_to_int(state, a_reg)
+                                rb = state_to_int(state, b_reg)
+                                rc = state_to_int(state, c_reg)
+
+                                self.assertEqual(ra, a)
+                                self.assertEqual(rb, b)
+                                self.assertEqual(rc, (c+a*b)%(2**(n+m)))
+                                            
+                                
 class TestAncillas(unittest.TestCase):
 
     def test_new(self):

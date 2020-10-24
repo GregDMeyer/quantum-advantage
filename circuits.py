@@ -37,7 +37,6 @@ def add_int(circ, A, B, ancillas):
     if len(A) > len(B):
         raise ValueError("register A too long to add to register B")
 
-    nB = len(B)
     for i, a in enumerate(A):
         cout = ancillas.new()
         if i == 0:
@@ -48,9 +47,9 @@ def add_int(circ, A, B, ancillas):
         cin = cout
 
     # need to carry to the end of B
-    for i, b in enumerate(B[len(A):]):
+    for b in B[len(A):]:
         cout = ancillas.new()
-        half_adder(circ, cin, B[len(A)+i], cout)
+        half_adder(circ, cin, b, cout)
         ancillas.discard(cin)
         cin = cout
 
@@ -95,9 +94,41 @@ def square(circ, A, B, ancillas):
 
         # finish performing the carries
         b_idx += 1
-        for j, b in enumerate(B[b_idx:]):
+        for b in B[b_idx:]:
             cout = ancillas.new()
-            half_adder(circ, cin, B[b_idx+j], cout)
+            half_adder(circ, cin, b, cout)
+            ancillas.discard(cin)
+            cin = cout
+
+        ancillas.discard(cin)
+
+def schoolbook_mult(circ, A, B, C, ancillas):
+    """
+    applies schoolbook multiplication
+
+    inputs:   A  B  C
+    outputs:  A  B  C+A*B
+    """
+    if len(C) < len(A)+len(B):
+        raise ValueError("register C not large enough to store result")
+
+    for i,a in enumerate(A):
+        cin = ancillas.new()
+        for j,b in enumerate(B):
+            d = ancillas.new()
+            circ.append(cirq.TOFFOLI(a, b, d))
+                
+            cout = ancillas.new()
+            full_adder(circ, d, C[i+j], cin, cout)
+            ancillas.discard(cin)
+            cin = cout
+
+            ancillas.discard(d)
+
+        # finish performing the carries
+        for c in C[i+len(B):]:
+            cout = ancillas.new()
+            half_adder(circ, cin, c, cout)
             ancillas.discard(cin)
             cin = cout
 
