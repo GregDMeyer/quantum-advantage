@@ -2,6 +2,16 @@
 import cirq
 from ancilla import Ancilla
 
+def half_adder(circ, A, B, Cout):
+    """
+    appends a half adder to circuit circ.
+
+    inputs:  A  B    Cout
+    outputs: A  A+B  Cout+(A+B)/2
+    """
+    circ.append(cirq.TOFFOLI(A, B, Cout))
+    circ.append(cirq.CNOT(A, B))
+
 def full_adder(circ, A, B, Cin, Cout):
     """
     appends a "full adder" circuit to circuit circ.
@@ -22,20 +32,29 @@ def add_int(circ, A, B, ancillas):
     adds the n qubit register A to m qubit register B, with n <= m
 
     inputs:   A  B
-    outputs:  A  B+A % 2^n
+    outputs:  A  B+A % 2^m
     """
     if len(A) > len(B):
         raise ValueError("register A too long to add to register B")
 
-    # TODO: use a half adder for first one
-    cin = ancillas.new()
     nB = len(B)
     for i, a in enumerate(A):
         cout = ancillas.new()
-        full_adder(circ, a, B[i], cin, cout)
+        if i == 0:
+            half_adder(circ, a, B[i], cout)
+        else:
+            full_adder(circ, a, B[i], cin, cout)
+            ancillas.discard(cin)
+        cin = cout
+
+    # need to carry to the end of B
+    for i, b in enumerate(B[len(A):]):
+        cout = ancillas.new()
+        half_adder(circ, cin, B[len(A)+i], cout)
         ancillas.discard(cin)
         cin = cout
 
+# TODO: add a flag to skip extra carries if we know B is empty
 def square(circ, A, B, ancillas):
     """
     squares the integer in the A register, and adds the result to
@@ -74,8 +93,12 @@ def square(circ, A, B, ancillas):
             else:
                 ancillas.discard(a)
 
-        # record the last carry bit
-        if i < len(A) - 1:
-            circ.append(cirq.CNOT(cin, B[len(A)+i+1]))
+        # finish performing the carries
+        b_idx += 1
+        for j, b in enumerate(B[b_idx:]):
+            cout = ancillas.new()
+            half_adder(circ, cin, B[b_idx+j], cout)
+            ancillas.discard(cin)
+            cin = cout
 
         ancillas.discard(cin)
