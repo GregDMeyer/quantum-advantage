@@ -142,6 +142,21 @@ class TestAncillas(unittest.TestCase):
 
         self.assertNotEqual(q1, q2)
 
+    def test_new_register(self):
+        n = 5
+        a = AncillaManager()
+
+        qubits = a.new_register(n)
+        self.assertEqual(len(qubits), n)
+        self.assertTrue(all(isinstance(q, cirq.NamedQubit) for q in qubits))
+        self.assertEqual(len(a), n)
+
+        qubits2 = a.new_register(n)
+        self.assertEqual(len(qubits), n)
+        self.assertTrue(all(isinstance(q, cirq.NamedQubit) for q in qubits2))
+        self.assertEqual(len(a), 2*n)
+
+        self.assertTrue(not any(q in qubits for q in qubits2))
 
 class TestUtils(unittest.TestCase):
 

@@ -25,6 +25,11 @@ class AncillaManager:
         self._qubits.append(q)
         return q
 
+    def new_register(self, n):
+        rtn = [Ancilla(len(self._qubits)+i) for i in range(n)]
+        self._qubits += rtn
+        return rtn
+    
     def discard(self, qubit):
         qubit.discard()
 
