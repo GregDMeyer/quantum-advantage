@@ -30,8 +30,12 @@ class AncillaManager:
         self._qubits += rtn
         return rtn
     
-    def discard(self, qubit):
-        qubit.discard()
+    def discard(self, qubits):
+        if isinstance(qubits, Ancilla):
+            qubits = [qubits]
+
+        for qubit in qubits:
+            qubit.discard()
 
     def all(self):
         return self._qubits
