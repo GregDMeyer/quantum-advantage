@@ -215,9 +215,9 @@ def schoolbook_square(circ, A, B, ancillas):
             if i == j:
                 # we need to carry an extra bit when i == j, because we are
                 # skipping one
+                b_idx += 1
                 cout = ancillas.new()
-                circ.append(cirq.TOFFOLI(B[b_idx+1], cin, cout))
-                circ.append(cirq.CNOT(cin, B[b_idx+1]))
+                half_adder(circ, cin, B[b_idx], cout)
                 ancillas.discard(cin)
                 cin = cout
             else:
@@ -232,3 +232,30 @@ def schoolbook_square(circ, A, B, ancillas):
             cin = cout
 
         ancillas.discard(cin)
+
+# TODO: add flag if we know C is zero?
+def karatsuba_square(circ, A, C, ancillas, cutoff=4):
+    """
+    applies karatsuba multiplication to square A
+
+    inputs:   A  C
+    outputs:  A  C+A*B
+    """
+    if len(C) < 2*len(A):
+        raise ValueError("register C not large enough to store result")
+
+    # base case
+    if len(A) < cutoff:
+        schoolbook_square(circ, A, C, ancillas)
+        return
+    
+    A_break = len(A)//2
+    A_low = A[:A_break]
+    A_high = A[A_break:]
+
+    C_mid = C[A_break+1:]   # +1 to handle factor of 2 in mult
+    C_high = C[2*A_break:]
+
+    karatsuba_square(circ, A_low,         C,      ancillas, cutoff)
+    karatsuba_mult(circ,   A_low, A_high, C_mid,  ancillas, cutoff)
+    karatsuba_square(circ, A_high,        C_high, ancillas, cutoff)

@@ -4,7 +4,7 @@ import unittest
 from itertools import product
 import cirq
 from circuits import full_adder, half_adder, add_int, add_classical_int
-from circuits import schoolbook_square, schoolbook_mult, karatsuba_mult
+from circuits import schoolbook_square, karatsuba_square, schoolbook_mult, karatsuba_mult
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
@@ -122,32 +122,41 @@ class TestArithmetic(unittest.TestCase):
             
     def test_square(self):
         n = 5
-        test_cases = range(2**n)
+        a_test_cases = range(2**n)
+        b_test_cases = (0, 1, 31, 2**(2*n)-1)
 
-        c = cirq.Circuit()
-        a_reg = cirq.NamedQubit.range(n, prefix="a")
-        b_reg = cirq.NamedQubit.range(2*n, prefix="b")
-        ancillas = AncillaManager()
+        square_methods = [
+            ("schoolbook", schoolbook_square),
+            ("karatsuba", karatsuba_square)
+        ]
 
-        with self.assertRaises(ValueError):
-            schoolbook_square(c, a_reg, a_reg, ancillas)
-        
-        schoolbook_square(c, a_reg, b_reg, ancillas)
+        for name, square in square_methods:
+            with self.subTest(square_method=name):
 
-        sim = ToffoliSimulator(c)
-        
-        for a in test_cases:
-            for b in (0, 2**n-1):
-                with self.subTest(a=a, b=b):
-                    state = int_to_state(a, a_reg)
-                    state.update(int_to_state(b, b_reg))
-                    state.update(ancillas.init_state())
-                    sim.simulate(state)
-                    ra = state_to_int(state, a_reg)
-                    rb = state_to_int(state, b_reg)
-
-                    self.assertEqual(ra, a)
-                    self.assertEqual(rb, b+a**2)
+                c = cirq.Circuit()
+                a_reg = cirq.NamedQubit.range(n, prefix="a")
+                b_reg = cirq.NamedQubit.range(2*n, prefix="b")
+                ancillas = AncillaManager()
+                
+                with self.assertRaises(ValueError):
+                    square(c, a_reg, a_reg, ancillas)
+                
+                square(c, a_reg, b_reg, ancillas)
+                
+                sim = ToffoliSimulator(c)
+                
+                for a in a_test_cases:
+                    for b in b_test_cases:
+                        with self.subTest(a=a, b=b):
+                            state = int_to_state(a, a_reg)
+                            state.update(int_to_state(b, b_reg))
+                            state.update(ancillas.init_state())
+                            sim.simulate(state)
+                            ra = state_to_int(state, a_reg)
+                            rb = state_to_int(state, b_reg)
+                
+                            self.assertEqual(ra, a)
+                            self.assertEqual(rb, (b+a**2)%(2**(2*n)))
 
     def test_mult(self):
         n = 4
