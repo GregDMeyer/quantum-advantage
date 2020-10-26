@@ -1,8 +1,10 @@
 
 import unittest
 
-from itertools import product
+from itertools import product, combinations_with_replacement
+import random
 import cirq
+
 from circuits import full_adder, half_adder, add_int, add_classical_int
 from circuits import schoolbook_square, karatsuba_square, schoolbook_mult, karatsuba_mult
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
@@ -127,7 +129,7 @@ class TestArithmetic(unittest.TestCase):
 
         square_methods = [
             ("schoolbook", schoolbook_square),
-            ("karatsuba", karatsuba_square)
+            ("karatsuba", lambda *args: karatsuba_square(*args, cutoff=3))
         ]
 
         for name, square in square_methods:
@@ -165,7 +167,7 @@ class TestArithmetic(unittest.TestCase):
 
         mult_methods = [
             ("schoolbook", schoolbook_mult),
-            ("karatsuba", karatsuba_mult)
+            ("karatsuba", lambda *args: karatsuba_mult(*args, cutoff=3))
         ]
         
         for name, mult in mult_methods:
@@ -203,8 +205,141 @@ class TestArithmetic(unittest.TestCase):
                                 self.assertEqual(ra, a)
                                 self.assertEqual(rb, b)
                                 self.assertEqual(rc, (c+a*b)%(2**(n+m)))
-                                            
-                                
+
+
+class TestArithmeticLarge(unittest.TestCase):
+
+    ns = [16, 50]
+    iterations = 16
+
+    def setUp(self):
+        random.seed(0xBEEFCAFE)
+    
+    def test_int_addition(self):
+        for n, m in combinations_with_replacement(self.ns, 2):
+            c = cirq.Circuit()
+            a_reg = cirq.NamedQubit.range(n, prefix="a")
+            b_reg = cirq.NamedQubit.range(m, prefix="b")
+            ancillas = AncillaManager()
+            
+            add_int(c, a_reg, b_reg, ancillas)
+            sim = ToffoliSimulator(c)
+            
+            for _ in range(self.iterations):
+                a = random.randint(0, 2**n-1)
+                b = random.randint(0, 2**m-1)
+                with self.subTest(a=a, b=b):
+                    state = int_to_state(a, a_reg)
+                    state.update(int_to_state(b, b_reg))
+                    state.update(ancillas.init_state())
+                    sim.simulate(state)
+                    ra = state_to_int(state, a_reg)
+                    rb = state_to_int(state, b_reg)
+    
+                    self.assertEqual(ra, a)
+                    self.assertEqual(rb, (a+b)%(2**m))
+
+    def test_classical_int_addition(self):
+        for n, m in combinations_with_replacement(self.ns, 2):
+            for _ in range(self.iterations):
+                a = random.randint(0, 2**n-1)
+                b = random.randint(0, 2**m-1)
+                with self.subTest(a=a, b=b):
+    
+                    c = cirq.Circuit()
+                    b_reg = cirq.NamedQubit.range(m, prefix="b")
+                    ancillas = AncillaManager()
+            
+                    add_classical_int(c, a, b_reg, ancillas)
+    
+                    sim = ToffoliSimulator(c)
+            
+                    state = int_to_state(b, b_reg)
+                    state.update(ancillas.init_state())
+                    sim.simulate(state)
+                    rb = state_to_int(state, b_reg)
+    
+                    self.assertEqual(rb, (a+b)%(2**m))
+                    
+    def test_square(self):
+
+        square_methods = [
+            ("schoolbook", schoolbook_square),
+            ("karatsuba", lambda *args: karatsuba_square(*args, cutoff=4))
+        ]
+
+        for n in self.ns:
+            for name, square in square_methods:
+                with self.subTest(square_method=name):
+    
+                    c = cirq.Circuit()
+                    a_reg = cirq.NamedQubit.range(n, prefix="a")
+                    b_reg = cirq.NamedQubit.range(2*n, prefix="b")
+                    ancillas = AncillaManager()
+                    
+                    with self.assertRaises(ValueError):
+                        square(c, a_reg, a_reg, ancillas)
+                    
+                    square(c, a_reg, b_reg, ancillas)
+                    
+                    sim = ToffoliSimulator(c)
+
+                    for _ in range(self.iterations):
+                        a = random.randint(0, 2**n-1)
+                        b = random.randint(0, 2**(2*n)-1)
+                        with self.subTest(a=a, b=b):
+                            state = int_to_state(a, a_reg)
+                            state.update(int_to_state(b, b_reg))
+                            state.update(ancillas.init_state())
+                            sim.simulate(state)
+                            ra = state_to_int(state, a_reg)
+                            rb = state_to_int(state, b_reg)
+                
+                            self.assertEqual(ra, a)
+                            self.assertEqual(rb, (b+a**2)%(2**(2*n)))
+
+    def test_mult(self):
+
+        mult_methods = [
+            ("schoolbook", schoolbook_mult),
+            ("karatsuba", lambda *args: karatsuba_mult(*args, cutoff=4))
+        ]
+        
+        for n,m in product(self.ns, repeat=2):
+            for name, mult in mult_methods:
+                with self.subTest(mult_method=name):
+                
+                    circ = cirq.Circuit()
+    
+                    a_reg = cirq.NamedQubit.range(n, prefix="a")
+                    b_reg = cirq.NamedQubit.range(m, prefix="b")
+                    c_reg = cirq.NamedQubit.range(m+n, prefix="c")
+                    ancillas = AncillaManager()
+    
+                    mult(circ, a_reg, b_reg, c_reg, ancillas)
+                    sim = ToffoliSimulator(circ)
+    
+                    for _ in range(self.iterations):
+                        a = random.randint(0, 2**n-1)
+                        b = random.randint(0, 2**m-1)
+                        c = random.randint(0, 2**(n+m)-1)
+                        with self.subTest(a=a, b=b, c=c):
+                            state = int_to_state(a, a_reg)
+                            state.update(int_to_state(b, b_reg))
+                            state.update(int_to_state(c, c_reg))
+                            state.update(ancillas.init_state())
+
+                            sim.simulate(state)
+                            
+                            ra = state_to_int(state, a_reg)
+                            rb = state_to_int(state, b_reg)
+                            rc = state_to_int(state, c_reg)
+
+                            self.assertEqual(ra, a)
+                            self.assertEqual(rb, b)
+                            self.assertEqual(rc, (c+a*b)%(2**(n+m)))
+
+                        
 class TestAncillas(unittest.TestCase):
 
     def test_new(self):

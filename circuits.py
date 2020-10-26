@@ -136,30 +136,37 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=4):
     if len(C) < len(A)+len(B):
         raise ValueError("register C not large enough to store result")
 
+    if cutoff < 3:
+        # otherwise we end up infinitely recursing
+        raise ValueError("cutoff must be >= 3")
+    
     # base case
-    if any(l < cutoff for l in (len(A), len(B))):
+    if any(l <= cutoff for l in (len(A), len(B))):
         schoolbook_mult(circ, A, B, C, ancillas)
         return
     
     AB_break = min(len(A), len(B))//2
-    C_break = 2*AB_break
 
     A_low = A[:AB_break]
     B_low = B[:AB_break]
-    C_low = C[:C_break]
     
     A_high = A[AB_break:]
     B_high = B[AB_break:]
-    C_high = C[C_break:]
 
-    # can't use C_low on this first one, because we need to carry
-    # all the way to the end of C
-    karatsuba_mult(circ, A_low,  B_low,  C, ancillas, cutoff)
+    C_mid  = ancillas.new_register(len(A_high)+len(B_high)+2)
+
+    # just using C_mid here to avoid extra allocation of C_low
+    karatsuba_mult(circ, A_low,  B_low,  C_mid,  ancillas, cutoff)
+    add_int(circ, C_mid, C, ancillas)  # C += C_low
+    
+    C_high = ancillas.new_register(len(A_high)+len(B_high))
     karatsuba_mult(circ, A_high, B_high, C_high, ancillas, cutoff)
+    add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+    add_int(circ, C_high, C_mid, ancillas)
+    ancillas.discard(C_high)
 
     A_sum = ancillas.new_register(len(A_high)+1)
     B_sum = ancillas.new_register(len(B_high)+1)
-    C_mid = ancillas.new_register(len(A_sum)+len(B_sum))
 
     copy_register(circ, A_low, A_sum)
     add_int(circ, A_high, A_sum, ancillas)
@@ -167,15 +174,13 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=4):
     copy_register(circ, B_low, B_sum)
     add_int(circ, B_high, B_sum, ancillas)
 
-    # sum C_low and C_high, then negate them
+    # negate the sum of C_low and C_high (stored in C_mid)
     # in 2s complement, this is a bit flip + 1
-    copy_register(circ, C_low, C_mid)
-    add_int(circ, C_high, C_mid, ancillas)
     for c in C_mid:
         circ.append(cirq.X(c))
     add_classical_int(circ, 1, C_mid, ancillas)
 
-    # finally add in the product
+    # finally add in the product of A_sum and B_sum
     karatsuba_mult(circ, A_sum, B_sum, C_mid, ancillas, cutoff)
 
     add_int(circ, C_mid, C[AB_break:], ancillas)
@@ -245,7 +250,7 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=4):
         raise ValueError("register C not large enough to store result")
 
     # base case
-    if len(A) < cutoff:
+    if len(A) <= cutoff:
         schoolbook_square(circ, A, C, ancillas)
         return
     
