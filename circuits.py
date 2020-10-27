@@ -126,7 +126,7 @@ def schoolbook_mult(circ, A, B, C, ancillas):
         ancillas.discard(cin)
 
 # TODO: add flag if we know C is zero?
-def karatsuba_mult(circ, A, B, C, ancillas, cutoff=4):
+def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
     """
     applies karatsuba multiplication
 
@@ -238,8 +238,8 @@ def schoolbook_square(circ, A, B, ancillas):
 
         ancillas.discard(cin)
 
-# TODO: add flag if we know C is zero?
-def karatsuba_square(circ, A, C, ancillas, cutoff=4):
+# TODO: add flag if we know C is zero
+def karatsuba_square(circ, A, C, ancillas, cutoff=64):
     """
     applies karatsuba multiplication to square A
 
@@ -258,9 +258,18 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=4):
     A_low = A[:A_break]
     A_high = A[A_break:]
 
-    C_mid = C[A_break+1:]   # +1 to handle factor of 2 in mult
-    C_high = C[2*A_break:]
+    # TODO: does this use too much space? I think it's actually OK
+    C_low = ancillas.new_register(2*A_break)
+    karatsuba_square(circ, A_low, C_low, ancillas, cutoff)
+    add_int(circ, C_low, C, ancillas)
+    ancillas.discard(C_low)
 
-    karatsuba_square(circ, A_low,         C,      ancillas, cutoff)
-    karatsuba_mult(circ,   A_low, A_high, C_mid,  ancillas, cutoff)
-    karatsuba_square(circ, A_high,        C_high, ancillas, cutoff)
+    C_mid = ancillas.new_register(len(A))
+    karatsuba_mult(circ, A_low, A_high, C_mid, ancillas, cutoff)
+    add_int(circ, C_mid, C[A_break+1:], ancillas)
+    ancillas.discard(C_mid)
+
+    C_high = ancillas.new_register(2*(len(A)-A_break))
+    karatsuba_square(circ, A_high, C_high, ancillas, cutoff)
+    add_int(circ, C_high, C[2*A_break:], ancillas)
+    ancillas.discard(C_high)
