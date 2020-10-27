@@ -6,7 +6,9 @@ import random
 import cirq
 
 from circuits import full_adder, half_adder, add_int, add_classical_int
-from circuits import schoolbook_square, karatsuba_square, schoolbook_mult, karatsuba_mult
+from circuits import schoolbook_square, karatsuba_square
+from circuits import schoolbook_mult, karatsuba_mult
+from circuits import schoolbook_classical_mult, karatsuba_classical_mult
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
@@ -64,7 +66,7 @@ class TestArithmetic(unittest.TestCase):
         (5, 8, 27, 130),
         (5, 8, 27, 250),
     ]
-    
+
     def test_int_addition(self):
         for n, m, a, b in self.addition_test_cases:
             with self.subTest(a=a, b=b):
@@ -73,11 +75,11 @@ class TestArithmetic(unittest.TestCase):
                 a_reg = cirq.NamedQubit.range(n, prefix="a")
                 b_reg = cirq.NamedQubit.range(m, prefix="b")
                 ancillas = AncillaManager()
-        
+
                 add_int(c, a_reg, b_reg, ancillas)
 
                 sim = ToffoliSimulator(c)
-        
+
                 state = int_to_state(a, a_reg)
                 state.update(int_to_state(b, b_reg))
                 state.update(ancillas.init_state())
@@ -95,18 +97,18 @@ class TestArithmetic(unittest.TestCase):
                 c = cirq.Circuit()
                 b_reg = cirq.NamedQubit.range(m, prefix="b")
                 ancillas = AncillaManager()
-        
+
                 add_classical_int(c, a, b_reg, ancillas)
 
                 sim = ToffoliSimulator(c)
-        
+
                 state = int_to_state(b, b_reg)
                 state.update(ancillas.init_state())
                 sim.simulate(state)
                 rb = state_to_int(state, b_reg)
 
                 self.assertEqual(rb, (a+b)%(2**m))
-                
+
     def test_int_addition_exceptions(self):
         c = cirq.Circuit()
         a_reg = cirq.NamedQubit.range(5, prefix="a")
@@ -115,13 +117,13 @@ class TestArithmetic(unittest.TestCase):
 
         # this should not raise an exception
         add_int(c, a_reg, b_reg, ancillas)
-                    
+
         with self.assertRaises(ValueError):
             add_int(c, b_reg, a_reg, ancillas)
 
         with self.assertRaises(ValueError):
             add_classical_int(c, 32, a_reg, ancillas)
-            
+
     def test_square(self):
         n = 5
         a_test_cases = range(2**n)
@@ -139,14 +141,14 @@ class TestArithmetic(unittest.TestCase):
                 a_reg = cirq.NamedQubit.range(n, prefix="a")
                 b_reg = cirq.NamedQubit.range(2*n, prefix="b")
                 ancillas = AncillaManager()
-                
+
                 with self.assertRaises(ValueError):
                     square(c, a_reg, a_reg, ancillas)
-                
+
                 square(c, a_reg, b_reg, ancillas)
-                
+
                 sim = ToffoliSimulator(c)
-                
+
                 for a in a_test_cases:
                     for b in b_test_cases:
                         with self.subTest(a=a, b=b):
@@ -156,7 +158,7 @@ class TestArithmetic(unittest.TestCase):
                             sim.simulate(state)
                             ra = state_to_int(state, a_reg)
                             rb = state_to_int(state, b_reg)
-                
+
                             self.assertEqual(ra, a)
                             self.assertEqual(rb, (b+a**2)%(2**(2*n)))
 
@@ -169,10 +171,10 @@ class TestArithmetic(unittest.TestCase):
             ("schoolbook", schoolbook_mult),
             ("karatsuba", lambda *args: karatsuba_mult(*args, cutoff=3))
         ]
-        
+
         for name, mult in mult_methods:
             with self.subTest(mult_method=name):
-            
+
                 circ1 = cirq.Circuit()
                 circ2 = cirq.Circuit()
 
@@ -197,7 +199,7 @@ class TestArithmetic(unittest.TestCase):
                                 state.update(ancillas.init_state())
 
                                 sim.simulate(state)
-                                
+
                                 ra = state_to_int(state, a_reg)
                                 rb = state_to_int(state, b_reg)
                                 rc = state_to_int(state, c_reg)
@@ -205,6 +207,41 @@ class TestArithmetic(unittest.TestCase):
                                 self.assertEqual(ra, a)
                                 self.assertEqual(rb, b)
                                 self.assertEqual(rc, (c+a*b)%(2**(n+m)))
+
+    def test_classical_mult(self):
+        n = 4
+        a_test_cases = b_test_cases = range(2**n)
+
+        mult_methods = [
+            ("schoolbook", schoolbook_classical_mult),
+            ("karatsuba", lambda *args: karatsuba_classical_mult(*args, cutoff=3))
+        ]
+
+        for name, mult in mult_methods:
+            with self.subTest(mult_method=name):
+                for a in a_test_cases:
+                    circ = cirq.Circuit()
+
+                    b_reg = cirq.NamedQubit.range(n, prefix="b")
+                    c_reg = cirq.NamedQubit.range(2*n, prefix="c")
+                    ancillas = AncillaManager()
+
+                    mult(circ, a, b_reg, c_reg, ancillas)
+                    sim = ToffoliSimulator(circ)
+
+                    for b,c in product(b_test_cases, (0, int(0.8122297*2**(2*n)), 2**(2*n)-1)):
+                        with self.subTest(a=a, b=b, c=c):
+                            state = int_to_state(b, b_reg)
+                            state.update(int_to_state(c, c_reg))
+                            state.update(ancillas.init_state())
+
+                            sim.simulate(state)
+
+                            rb = state_to_int(state, b_reg)
+                            rc = state_to_int(state, c_reg)
+
+                            self.assertEqual(rb, b)
+                            self.assertEqual(rc, (c+a*b)%(2**(2*n)))
 
 
 class TestArithmeticLarge(unittest.TestCase):
@@ -214,17 +251,17 @@ class TestArithmeticLarge(unittest.TestCase):
 
     def setUp(self):
         random.seed(0xBEEFCAFE)
-    
+
     def test_int_addition(self):
         for n, m in combinations_with_replacement(self.ns, 2):
             c = cirq.Circuit()
             a_reg = cirq.NamedQubit.range(n, prefix="a")
             b_reg = cirq.NamedQubit.range(m, prefix="b")
             ancillas = AncillaManager()
-            
+
             add_int(c, a_reg, b_reg, ancillas)
             sim = ToffoliSimulator(c)
-            
+
             for _ in range(self.iterations):
                 a = random.randint(0, 2**n-1)
                 b = random.randint(0, 2**m-1)
@@ -235,7 +272,7 @@ class TestArithmeticLarge(unittest.TestCase):
                     sim.simulate(state)
                     ra = state_to_int(state, a_reg)
                     rb = state_to_int(state, b_reg)
-    
+
                     self.assertEqual(ra, a)
                     self.assertEqual(rb, (a+b)%(2**m))
 
@@ -245,22 +282,22 @@ class TestArithmeticLarge(unittest.TestCase):
                 a = random.randint(0, 2**n-1)
                 b = random.randint(0, 2**m-1)
                 with self.subTest(a=a, b=b):
-    
+
                     c = cirq.Circuit()
                     b_reg = cirq.NamedQubit.range(m, prefix="b")
                     ancillas = AncillaManager()
-            
+
                     add_classical_int(c, a, b_reg, ancillas)
-    
+
                     sim = ToffoliSimulator(c)
-            
+
                     state = int_to_state(b, b_reg)
                     state.update(ancillas.init_state())
                     sim.simulate(state)
                     rb = state_to_int(state, b_reg)
-    
+
                     self.assertEqual(rb, (a+b)%(2**m))
-                    
+
     def test_square(self):
 
         square_methods = [
@@ -271,17 +308,17 @@ class TestArithmeticLarge(unittest.TestCase):
         for n in self.ns:
             for name, square in square_methods:
                 with self.subTest(square_method=name):
-    
+
                     c = cirq.Circuit()
                     a_reg = cirq.NamedQubit.range(n, prefix="a")
                     b_reg = cirq.NamedQubit.range(2*n, prefix="b")
                     ancillas = AncillaManager()
-                    
+
                     with self.assertRaises(ValueError):
                         square(c, a_reg, a_reg, ancillas)
-                    
+
                     square(c, a_reg, b_reg, ancillas)
-                    
+
                     sim = ToffoliSimulator(c)
 
                     for _ in range(self.iterations):
@@ -294,7 +331,7 @@ class TestArithmeticLarge(unittest.TestCase):
                             sim.simulate(state)
                             ra = state_to_int(state, a_reg)
                             rb = state_to_int(state, b_reg)
-                
+
                             self.assertEqual(ra, a)
                             self.assertEqual(rb, (b+a**2)%(2**(2*n)))
 
@@ -304,21 +341,21 @@ class TestArithmeticLarge(unittest.TestCase):
             ("schoolbook", schoolbook_mult),
             ("karatsuba", lambda *args: karatsuba_mult(*args, cutoff=4))
         ]
-        
+
         for n,m in product(self.ns, repeat=2):
             for name, mult in mult_methods:
                 with self.subTest(mult_method=name):
-                
+
                     circ = cirq.Circuit()
-    
+
                     a_reg = cirq.NamedQubit.range(n, prefix="a")
                     b_reg = cirq.NamedQubit.range(m, prefix="b")
                     c_reg = cirq.NamedQubit.range(m+n, prefix="c")
                     ancillas = AncillaManager()
-    
+
                     mult(circ, a_reg, b_reg, c_reg, ancillas)
                     sim = ToffoliSimulator(circ)
-    
+
                     for _ in range(self.iterations):
                         a = random.randint(0, 2**n-1)
                         b = random.randint(0, 2**m-1)
@@ -330,7 +367,7 @@ class TestArithmeticLarge(unittest.TestCase):
                             state.update(ancillas.init_state())
 
                             sim.simulate(state)
-                            
+
                             ra = state_to_int(state, a_reg)
                             rb = state_to_int(state, b_reg)
                             rc = state_to_int(state, c_reg)
@@ -339,7 +376,7 @@ class TestArithmeticLarge(unittest.TestCase):
                             self.assertEqual(rb, b)
                             self.assertEqual(rc, (c+a*b)%(2**(n+m)))
 
-                        
+
 class TestAncillas(unittest.TestCase):
 
     def test_new(self):
@@ -381,6 +418,6 @@ class TestUtils(unittest.TestCase):
         for x in test_cases:
             with self.subTest(x=x):
                 self.assertEqual(x, state_to_int(int_to_state(x, r), r))
-        
+
 if __name__ == '__main__':
     unittest.main()

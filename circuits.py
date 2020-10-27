@@ -1,6 +1,5 @@
 
 import cirq
-from ancilla import Ancilla
 
 def half_adder(circ, A, B, Cout):
     """
@@ -19,7 +18,7 @@ def full_adder(circ, A, B, Cin, Cout):
     inputs:   A  B         Cin  Cout
     outputs:  A  A+B+Cin%2 Cin  Cout+(A+B+C/2)
 
-    the qubits A and Cin are measured in the H basis and zeroed 
+    the qubits A and Cin are measured in the H basis and zeroed
     after the adder is performed.
     """
     circ.append(cirq.TOFFOLI(A, B, Cout))
@@ -39,7 +38,7 @@ def copy_register(circ, A, B):
 
     for a, b in zip(A, B):
         circ.append(cirq.CNOT(a, b))
-    
+
 def add_int(circ, A, B, ancillas):
     """
     adds the n qubit register A to m qubit register B, with n <= m
@@ -92,7 +91,7 @@ def add_classical_int(circ, x, A, ancillas):
         ancillas.discard(cin)
         cin = cout
         x >>= 1
-        
+
 def schoolbook_mult(circ, A, B, C, ancillas):
     """
     applies schoolbook multiplication
@@ -108,7 +107,7 @@ def schoolbook_mult(circ, A, B, C, ancillas):
         for j,b in enumerate(B):
             d = ancillas.new()
             circ.append(cirq.TOFFOLI(a, b, d))
-                
+
             cout = ancillas.new()
             full_adder(circ, d, C[i+j], cin, cout)
             ancillas.discard(cin)
@@ -139,17 +138,17 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
     if cutoff < 3:
         # otherwise we end up infinitely recursing
         raise ValueError("cutoff must be >= 3")
-    
+
     # base case
     if any(l <= cutoff for l in (len(A), len(B))):
         schoolbook_mult(circ, A, B, C, ancillas)
         return
-    
+
     AB_break = min(len(A), len(B))//2
 
     A_low = A[:AB_break]
     B_low = B[:AB_break]
-    
+
     A_high = A[AB_break:]
     B_high = B[AB_break:]
 
@@ -158,7 +157,7 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
     # just using C_mid here to avoid extra allocation of C_low
     karatsuba_mult(circ, A_low,  B_low,  C_mid,  ancillas, cutoff)
     add_int(circ, C_mid, C, ancillas)  # C += C_low
-    
+
     C_high = ancillas.new_register(len(A_high)+len(B_high))
     karatsuba_mult(circ, A_high, B_high, C_high, ancillas, cutoff)
     add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
@@ -170,7 +169,7 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
 
     copy_register(circ, A_low, A_sum)
     add_int(circ, A_high, A_sum, ancillas)
-    
+
     copy_register(circ, B_low, B_sum)
     add_int(circ, B_high, B_sum, ancillas)
 
@@ -184,8 +183,98 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
     karatsuba_mult(circ, A_sum, B_sum, C_mid, ancillas, cutoff)
 
     add_int(circ, C_mid, C[AB_break:], ancillas)
-    
+
     ancillas.discard(A_sum)
+    ancillas.discard(B_sum)
+    ancillas.discard(C_mid)
+
+def schoolbook_classical_mult(circ, a, B, C, ancillas):
+    """
+    applies schoolbook multiplication, with classical input a
+
+    inputs:   B  C
+    outputs:  B  C+a*B
+    """
+    if len(C) < a.bit_length()+len(B):
+        raise ValueError("register C not large enough to store result")
+
+    for i in range(a.bit_length()):
+        if a&1:
+            cin = ancillas.new()
+            for j,b in enumerate(B):
+                cout = ancillas.new()
+                full_adder(circ, b, C[i+j], cin, cout)
+                ancillas.discard(cin)
+                cin = cout
+
+            # finish performing the carries
+            for c in C[i+len(B):]:
+                cout = ancillas.new()
+                half_adder(circ, cin, c, cout)
+                ancillas.discard(cin)
+                cin = cout
+
+            ancillas.discard(cin)
+
+        a >>= 1
+
+# TODO: add flag if we know C is zero?
+def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64):
+    """
+    applies karatsuba multiplication with one classical input
+
+    inputs:   B  C
+    outputs:  B  C+a*B
+    """
+    if len(C) < a.bit_length()+len(B):
+        raise ValueError("register C not large enough to store result")
+
+    if cutoff < 3:
+        # otherwise we end up infinitely recursing
+        raise ValueError("cutoff must be >= 3")
+
+    # base case
+    if any(l <= cutoff for l in (a.bit_length(), len(B))):
+        schoolbook_classical_mult(circ, a, B, C, ancillas)
+        return
+
+    AB_break = min(a.bit_length(), len(B))//2
+
+    a_low = a & ((1<<AB_break)-1)
+    B_low = B[:AB_break]
+
+    a_high = a>>AB_break
+    B_high = B[AB_break:]
+
+    C_mid  = ancillas.new_register(a_high.bit_length()+len(B_high)+2)
+
+    # just using C_mid here to avoid extra allocation of C_low
+    karatsuba_classical_mult(circ, a_low,  B_low,  C_mid,  ancillas, cutoff)
+    add_int(circ, C_mid, C, ancillas)  # C += C_low
+
+    C_high = ancillas.new_register(a_high.bit_length()+len(B_high))
+    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff)
+    add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+    add_int(circ, C_high, C_mid, ancillas)
+    ancillas.discard(C_high)
+
+    a_sum = a_low + a_high
+
+    B_sum = ancillas.new_register(len(B_high)+1)
+    copy_register(circ, B_low, B_sum)
+    add_int(circ, B_high, B_sum, ancillas)
+
+    # negate the sum of C_low and C_high (stored in C_mid)
+    # in 2s complement, this is a bit flip + 1
+    for c in C_mid:
+        circ.append(cirq.X(c))
+    add_classical_int(circ, 1, C_mid, ancillas)
+
+    # finally add in the product of A_sum and B_sum
+    karatsuba_classical_mult(circ, a_sum, B_sum, C_mid, ancillas, cutoff)
+
+    add_int(circ, C_mid, C[AB_break:], ancillas)
+
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
 
@@ -211,7 +300,7 @@ def schoolbook_square(circ, A, B, ancillas):
                 circ.append(cirq.TOFFOLI(A[i], A[j], a))
 
             b_idx = i+j+(i!=j)
-                
+
             cout = ancillas.new()
             full_adder(circ, a, B[b_idx], cin, cout)
             ancillas.discard(cin)
@@ -253,7 +342,7 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=64):
     if len(A) <= cutoff:
         schoolbook_square(circ, A, C, ancillas)
         return
-    
+
     A_break = len(A)//2
     A_low = A[:A_break]
     A_high = A[A_break:]
