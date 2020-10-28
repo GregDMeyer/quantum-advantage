@@ -39,17 +39,20 @@ def copy_register(circ, A, B):
     for a, b in zip(A, B):
         circ.append(cirq.CNOT(a, b))
 
-def add_int(circ, A, B, ancillas):
+def add_int(circ, A, B, ancillas, allow_overflow=False):
     """
     adds the n qubit register A to m qubit register B, with n <= m
 
     inputs:   A  B
     outputs:  A  B+A % 2^m
     """
-    if len(A) > len(B):
+    if not allow_overflow and len(A) > len(B):
         raise ValueError("register A too long to add to register B")
 
     for i, a in enumerate(A):
+        if i >= len(B):
+            break
+
         cout = ancillas.new()
         if i == 0:
             half_adder(circ, a, B[i], cout)
@@ -91,6 +94,38 @@ def add_classical_int(circ, x, A, ancillas):
         ancillas.discard(cin)
         cin = cout
         x >>= 1
+
+def lessthan_classical(circ, A, x, b, ancillas):
+    """
+    inputs:  A  b
+    outputs: A  b+(A<x)
+    """
+    if x.bit_length() > len(A):
+        # x is certainly larger than A
+        circ.append(cirq.X(b))
+        return
+
+    # whether they are equal, starts as 1
+    eq = ancillas.new()
+    circ.append(cirq.X(eq))
+
+    for i,a in reversed(list(enumerate(A))):
+        eq_out = ancillas.new()
+        circ.append(cirq.CNOT(eq, eq_out))
+        if (x&(1<<i)) == 0:
+            # if a is 1, they are not equal
+            circ.append(cirq.TOFFOLI(eq, a, eq_out))
+        else:
+            # if a is 0 and they are equal so far, a is less and they are not equal
+            circ.append(cirq.X(a))
+            circ.append(cirq.TOFFOLI(eq, a, b))
+            circ.append(cirq.TOFFOLI(eq, a, eq_out))
+            circ.append(cirq.X(a))
+
+        ancillas.discard(eq)
+        eq = eq_out
+
+    ancillas.discard(eq)
 
 def schoolbook_mult(circ, A, B, C, ancillas):
     """
@@ -188,20 +223,24 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
 
-def schoolbook_classical_mult(circ, a, B, C, ancillas):
+def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False):
     """
     applies schoolbook multiplication, with classical input a
 
     inputs:   B  C
     outputs:  B  C+a*B
     """
-    if len(C) < a.bit_length()+len(B):
+    len_a = a.bit_length() if a>=0 else len(C)
+
+    if not allow_overflow and len(C) < len_a+len(B):
         raise ValueError("register C not large enough to store result")
 
-    for i in range(a.bit_length()):
+    for i in range(len_a):
         if a&1:
             cin = ancillas.new()
             for j,b in enumerate(B):
+                if i+j >= len(C):
+                    break
                 cout = ancillas.new()
                 full_adder(circ, b, C[i+j], cin, cout)
                 ancillas.discard(cin)
@@ -219,14 +258,16 @@ def schoolbook_classical_mult(circ, a, B, C, ancillas):
         a >>= 1
 
 # TODO: add flag if we know C is zero?
-def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64):
+def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64, allow_overflow=False):
     """
     applies karatsuba multiplication with one classical input
 
     inputs:   B  C
     outputs:  B  C+a*B
     """
-    if len(C) < a.bit_length()+len(B):
+    len_a = a.bit_length() if a>=0 else len(C)
+
+    if not allow_overflow and len(C) < len_a+len(B):
         raise ValueError("register C not large enough to store result")
 
     if cutoff < 3:
@@ -234,11 +275,11 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64):
         raise ValueError("cutoff must be >= 3")
 
     # base case
-    if any(l <= cutoff for l in (a.bit_length(), len(B))):
-        schoolbook_classical_mult(circ, a, B, C, ancillas)
+    if any(l <= cutoff for l in (len_a, len(B))):
+        schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=allow_overflow)
         return
 
-    AB_break = min(a.bit_length(), len(B))//2
+    AB_break = min(len_a, len(B))//2
 
     a_low = a & ((1<<AB_break)-1)
     B_low = B[:AB_break]
@@ -249,20 +290,20 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64):
     C_mid  = ancillas.new_register(a_high.bit_length()+len(B_high)+2)
 
     # just using C_mid here to avoid extra allocation of C_low
-    karatsuba_classical_mult(circ, a_low,  B_low,  C_mid,  ancillas, cutoff)
-    add_int(circ, C_mid, C, ancillas)  # C += C_low
+    karatsuba_classical_mult(circ, a_low, B_low, C_mid, ancillas, cutoff, allow_overflow=allow_overflow)
+    add_int(circ, C_mid, C, ancillas, allow_overflow=allow_overflow)  # C += C_low
 
     C_high = ancillas.new_register(a_high.bit_length()+len(B_high))
-    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff)
-    add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
-    add_int(circ, C_high, C_mid, ancillas)
+    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff, allow_overflow=allow_overflow)
+    add_int(circ, C_high, C[2*AB_break:], ancillas, allow_overflow=allow_overflow) # C += C_high
+    add_int(circ, C_high, C_mid, ancillas, allow_overflow=allow_overflow)
     ancillas.discard(C_high)
 
     a_sum = a_low + a_high
 
     B_sum = ancillas.new_register(len(B_high)+1)
     copy_register(circ, B_low, B_sum)
-    add_int(circ, B_high, B_sum, ancillas)
+    add_int(circ, B_high, B_sum, ancillas, allow_overflow=allow_overflow)
 
     # negate the sum of C_low and C_high (stored in C_mid)
     # in 2s complement, this is a bit flip + 1
@@ -271,9 +312,9 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64):
     add_classical_int(circ, 1, C_mid, ancillas)
 
     # finally add in the product of A_sum and B_sum
-    karatsuba_classical_mult(circ, a_sum, B_sum, C_mid, ancillas, cutoff)
+    karatsuba_classical_mult(circ, a_sum, B_sum, C_mid, ancillas, cutoff, allow_overflow=allow_overflow)
 
-    add_int(circ, C_mid, C[AB_break:], ancillas)
+    add_int(circ, C_mid, C[AB_break:], ancillas, allow_overflow=allow_overflow)
 
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
@@ -362,3 +403,48 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=64):
     karatsuba_square(circ, A_high, C_high, ancillas, cutoff)
     add_int(circ, C_high, C[2*A_break:], ancillas)
     ancillas.discard(C_high)
+
+def montgomery_reduce(circ, T, ancillas, N, mult=None):
+
+    if len(T) < 2*N.bit_length() + 1:
+        raise ValueError("T too small for montgomery reduction")
+
+    if mult is None:
+        mult = karatsuba_classical_mult
+
+    r = N.bit_length()  # R is closest power of 2 greater than N
+    R = 1 << r
+    _, Np = extended_gcd(R, N)
+
+    m = ancillas.new_register(r)
+    mult(circ, Np, T[:r], m, ancillas, allow_overflow=True)
+    mult(circ, N, m, T, ancillas)
+    ancillas.discard(m)
+
+    b = ancillas.new()
+    lessthan_classical(circ, T[r:], N, b, ancillas)
+    circ.append(cirq.X(b))
+    mult(circ, -N, [b], T[r:], ancillas, allow_overflow=True)
+
+    return R
+
+# adapted from https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
+def extended_gcd(a, b):
+    old_r, r = a, b
+    old_s, s = 1, 0
+    old_t, t = 0, 1
+
+    while r != 0:
+        quotient = old_r // r
+        old_r, r = r, (old_r - quotient * r)
+        old_s, s = s, (old_s - quotient * s)
+        old_t, t = t, (old_t - quotient * t)
+
+    # we want a*x - b*y = 1 and 0 < x < b and 0 < y < a
+    if old_s < 0:
+        old_s += b
+
+    if old_t > 0:
+        old_t -= a
+
+    return old_s, -old_t

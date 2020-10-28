@@ -5,10 +5,11 @@ from itertools import product, combinations_with_replacement
 import random
 import cirq
 
-from circuits import full_adder, half_adder, add_int, add_classical_int
+from circuits import full_adder, half_adder, add_int, add_classical_int, lessthan_classical
 from circuits import schoolbook_square, karatsuba_square
 from circuits import schoolbook_mult, karatsuba_mult
 from circuits import schoolbook_classical_mult, karatsuba_classical_mult
+from circuits import extended_gcd, montgomery_reduce
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
@@ -123,6 +124,29 @@ class TestArithmetic(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             add_classical_int(c, 32, a_reg, ancillas)
+
+    def test_lessthan_classical(self):
+        for _, m, a, b in self.addition_test_cases:
+            with self.subTest(a=a, b=b):
+
+                c = cirq.Circuit()
+                b_reg = cirq.NamedQubit.range(m, prefix="b")
+                ancillas = AncillaManager()
+                result = ancillas.new()
+
+                lessthan_classical(c, b_reg, a, result, ancillas)
+
+                sim = ToffoliSimulator(c)
+
+                state = int_to_state(b, b_reg)
+                state.update(ancillas.init_state())
+                sim.simulate(state)
+
+                rb = state_to_int(state, b_reg)
+                rresult = state_to_int(state, [result])
+
+                self.assertEqual(rb, b)
+                self.assertEqual(rresult, b<a)
 
     def test_square(self):
         n = 5
@@ -418,6 +442,69 @@ class TestUtils(unittest.TestCase):
         for x in test_cases:
             with self.subTest(x=x):
                 self.assertEqual(x, state_to_int(int_to_state(x, r), r))
+
+class TestMontgomery(unittest.TestCase):
+
+    from math import gcd
+    iters = 32
+
+    def setUp(self):
+        random.seed(0xFEEDBEEF)
+
+    def test_extended_gcd(self):
+        n = 16
+        for _ in range(self.iters):
+
+            # pick two random numbers with gcd 1
+            a = random.randint(0, 2**n-1)
+            b = random.randint(0, 2**n-1)
+            g = self.gcd(a, b)
+            a //= g
+            b //= g
+
+            x, y = extended_gcd(a, b)
+
+            self.assertEqual(a*x % b, 1)
+            self.assertEqual(b*y % a, a-1)
+
+            self.assertGreaterEqual(x, 0)
+            self.assertGreaterEqual(y, 0)
+            self.assertLess(x, b)
+            self.assertLess(y, a)
+
+    def test_montgomery_reduce(self):
+        n = 8
+
+        mult_methods = [
+            ("schoolbook", schoolbook_classical_mult),
+            ("karatsuba", lambda *args, **kwargs: karatsuba_classical_mult(*args, cutoff=4, **kwargs))
+        ]
+
+        for _ in range(self.iters):
+            N = random.randint(0, 2**n-1) | 1 | (1 << (n-1))# make sure it's odd and big
+            T = random.randint(0, N*(2**n)-1)
+            for name, mult in mult_methods:
+                with self.subTest(T=T, N=N, mult_method=name):
+
+                    circ = cirq.Circuit()
+
+                    T_reg = cirq.NamedQubit.range(2*n+1, prefix="T")
+                    ancillas = AncillaManager()
+
+                    R = montgomery_reduce(circ, T_reg, ancillas, N, mult=mult)
+                    sim = ToffoliSimulator(circ)
+
+                    state = int_to_state(T, T_reg)
+                    state.update(ancillas.init_state())
+
+                    sim.simulate(state)
+
+                    rT = state_to_int(state, T_reg[n:])
+                    rT_low = state_to_int(state, T_reg[:n])
+
+                    self.assertEqual(rT_low, 0)
+                    self.assertEqual((rT*R)%N, T%N)
+                    self.assertLess(rT, N)
 
 if __name__ == '__main__':
     unittest.main()
