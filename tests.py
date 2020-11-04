@@ -9,9 +9,51 @@ from circuits import full_adder, half_adder, add_int, add_classical_int, lesstha
 from circuits import schoolbook_square, karatsuba_square
 from circuits import schoolbook_mult, karatsuba_mult
 from circuits import schoolbook_classical_mult, karatsuba_classical_mult
-from circuits import extended_gcd, montgomery_reduce
+from circuits import extended_gcd, montgomery_reduce, x2_mod_N
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
+
+class TestX2modN(unittest.TestCase):
+
+    ns = [8, 16, 50]
+    iters = 8
+    methods = ['karatsuba', 'schoolbook']
+
+    def setUp(self):
+        random.seed(0xF00DCAFE)
+
+    def test_x2modN(self):
+        for n in self.ns:
+            x_reg = cirq.NamedQubit.range(n, prefix="x")
+            y_reg = cirq.NamedQubit.range(2*n+1, prefix="y")
+            for _, method in product(range(self.iters), self.methods):
+
+                N = random.randint(0, 2**n-1)  # we will have N = pq, but this is fine for testing
+                N |= 1           # N must be odd
+                N |= 1 << (n-1)  # N must be of length n
+
+                with self.subTest(N=N, method=method):
+
+                    circ = cirq.Circuit()
+                    ancillas = AncillaManager()
+                    R = x2_mod_N(circ, N, x_reg, y_reg, ancillas, method)
+                    sim = ToffoliSimulator(circ)
+
+                    for _ in range(self.iters):
+                        x = random.randint(0, N-1)
+                        with self.subTest(x=x):
+                            state = int_to_state(x, x_reg)
+                            state.update(int_to_state(0, y_reg))
+                            state.update(ancillas.init_state())
+                            sim.simulate(state)
+                            rx = state_to_int(state, x_reg)
+                            ry = state_to_int(state, y_reg[n:]) # result is top bits of y register
+
+                            self.assertEqual(rx, x)
+
+                            self.assertLess(ry, N)
+                            self.assertEqual((R*ry)%N, (x**2)%N)
+
 
 class TestSubCircuits(unittest.TestCase):
 
@@ -270,7 +312,7 @@ class TestArithmetic(unittest.TestCase):
 
 class TestArithmeticLarge(unittest.TestCase):
 
-    ns = [16, 50]
+    ns = [16, 30]
     iterations = 16
 
     def setUp(self):

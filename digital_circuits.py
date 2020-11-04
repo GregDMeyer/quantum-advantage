@@ -1,4 +1,9 @@
 
+# TODO:
+#  - optimize karatsuba cutoffs
+#  - decompose toffoli gates
+#  - optimize for when we know output register is zero
+
 import cirq
 
 def half_adder(circ, A, B, Cout):
@@ -160,7 +165,7 @@ def schoolbook_mult(circ, A, B, C, ancillas):
         ancillas.discard(cin)
 
 # TODO: add flag if we know C is zero?
-def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
+def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None):
     """
     applies karatsuba multiplication
 
@@ -170,12 +175,17 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=64):
     if len(C) < len(A)+len(B):
         raise ValueError("register C not large enough to store result")
 
-    if cutoff < 3:
+    if cutoff is None:
+        _cutoff = 21  # found by optimization
+    else:
+        _cutoff = cutoff
+
+    if _cutoff < 3:
         # otherwise we end up infinitely recursing
         raise ValueError("cutoff must be >= 3")
 
     # base case
-    if any(l <= cutoff for l in (len(A), len(B))):
+    if any(l <= _cutoff for l in (len(A), len(B))):
         schoolbook_mult(circ, A, B, C, ancillas)
         return
 
@@ -258,7 +268,7 @@ def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False):
         a >>= 1
 
 # TODO: add flag if we know C is zero?
-def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64, allow_overflow=False):
+def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflow=False):
     """
     applies karatsuba multiplication with one classical input
 
@@ -270,12 +280,17 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=64, allow_overflow=
     if not allow_overflow and len(C) < len_a+len(B):
         raise ValueError("register C not large enough to store result")
 
-    if cutoff < 3:
+    if cutoff is None:
+        _cutoff = 256  # TODO: something weird is going on---does it have to be that high?
+    else:
+        _cutoff = cutoff
+
+    if _cutoff < 3:
         # otherwise we end up infinitely recursing
         raise ValueError("cutoff must be >= 3")
 
     # base case
-    if any(l <= cutoff for l in (len_a, len(B))):
+    if any(l <= _cutoff for l in (len_a, len(B))):
         schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=allow_overflow)
         return
 
@@ -369,7 +384,7 @@ def schoolbook_square(circ, A, B, ancillas):
         ancillas.discard(cin)
 
 # TODO: add flag if we know C is zero
-def karatsuba_square(circ, A, C, ancillas, cutoff=64):
+def karatsuba_square(circ, A, C, ancillas, cutoff=None):
     """
     applies karatsuba multiplication to square A
 
@@ -379,8 +394,13 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=64):
     if len(C) < 2*len(A):
         raise ValueError("register C not large enough to store result")
 
+    if cutoff is None:
+        _cutoff = 51
+    else:
+        _cutoff = cutoff
+
     # base case
-    if len(A) <= cutoff:
+    if len(A) <= _cutoff:
         schoolbook_square(circ, A, C, ancillas)
         return
 
@@ -409,6 +429,9 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
     if len(T) < 2*N.bit_length() + 1:
         raise ValueError("T too small for montgomery reduction")
 
+    if not N&1:
+        raise ValueError("N must be odd")
+
     if mult is None:
         mult = karatsuba_classical_mult
 
@@ -424,7 +447,7 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
     b = ancillas.new()
     lessthan_classical(circ, T[r:], N, b, ancillas)
     circ.append(cirq.X(b))
-    mult(circ, -N, [b], T[r:], ancillas, allow_overflow=True)
+    schoolbook_classical_mult(circ, -N, [b], T[r:], ancillas, allow_overflow=True)
 
     return R
 
@@ -448,3 +471,17 @@ def extended_gcd(a, b):
         old_t -= a
 
     return old_s, -old_t
+
+def x2_mod_N(circ, N, x, y, ancillas, mult_type):
+    if mult_type == "karatsuba":
+        karatsuba_square(circ, x, y, ancillas)
+        R = montgomery_reduce(circ, y, ancillas, N, mult=karatsuba_classical_mult)
+
+    elif mult_type == "schoolbook":
+        schoolbook_square(circ, x, y, ancillas)
+        R = montgomery_reduce(circ, y, ancillas, N, mult=schoolbook_classical_mult)
+
+    else:
+        raise ValueError(f"unknown mult type '{mult_type}'")
+
+    return R
