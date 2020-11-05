@@ -135,7 +135,7 @@ def lessthan_classical(circ, A, x, b, ancillas):
 
     ancillas.discard(eq)
 
-def schoolbook_mult(circ, A, B, C, ancillas):
+def schoolbook_mult(circ, A, B, C, ancillas, C_zero=False):
     """
     applies schoolbook multiplication
 
@@ -159,16 +159,19 @@ def schoolbook_mult(circ, A, B, C, ancillas):
             ancillas.discard(d)
 
         # finish performing the carries
-        for c in C[i+len(B):]:
-            cout = ancillas.new()
-            half_adder(circ, cin, c, cout)
-            ancillas.discard(cin)
-            cin = cout
+        if not C_zero:
+            for c in C[i+len(B):]:
+                cout = ancillas.new()
+                half_adder(circ, cin, c, cout)
+                ancillas.discard(cin)
+                cin = cout
+        else:
+            circ.append(cirq.CNOT(cin, C[i+len(B)]))
 
         ancillas.discard(cin)
 
 # TODO: add flag if we know C is zero?
-def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None):
+def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None, C_zero=False):
     """
     applies karatsuba multiplication
 
@@ -189,7 +192,7 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None):
 
     # base case
     if any(l <= _cutoff for l in (len(A), len(B))):
-        schoolbook_mult(circ, A, B, C, ancillas)
+        schoolbook_mult(circ, A, B, C, ancillas, C_zero=C_zero) # TODO
         return
 
     AB_break = min(len(A), len(B))//2
@@ -203,14 +206,24 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None):
     C_mid  = ancillas.new_register(len(A_high)+len(B_high)+2)
 
     # just using C_mid here to avoid extra allocation of C_low
-    karatsuba_mult(circ, A_low,  B_low,  C_mid,  ancillas, cutoff)
-    add_int(circ, C_mid, C, ancillas)  # C += C_low
+    karatsuba_mult(circ, A_low, B_low, C_mid, ancillas, cutoff, C_zero=True)
+    if C_zero:
+        copy_register(circ, C_mid[:2*AB_break], C[:2*AB_break])
+    else:
+        add_int(circ, C_mid, C, ancillas)  # C += C_low
 
-    C_high = ancillas.new_register(len(A_high)+len(B_high))
-    karatsuba_mult(circ, A_high, B_high, C_high, ancillas, cutoff)
-    add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+    C_high_size = len(A_high)+len(B_high)
+    if C_zero:
+        C_high = C[2*AB_break:2*AB_break+C_high_size]
+    else:
+        C_high = ancillas.new_register(C_high_size)
+
+    karatsuba_mult(circ, A_high, B_high, C_high, ancillas, cutoff, C_zero=True)
     add_int(circ, C_high, C_mid, ancillas)
-    ancillas.discard(C_high)
+
+    if not C_zero:
+        add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+        ancillas.discard(C_high)
 
     A_sum = ancillas.new_register(len(A_high)+1)
     B_sum = ancillas.new_register(len(B_high)+1)
@@ -229,14 +242,13 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None):
 
     # finally add in the product of A_sum and B_sum
     karatsuba_mult(circ, A_sum, B_sum, C_mid, ancillas, cutoff)
-
     add_int(circ, C_mid, C[AB_break:], ancillas)
 
     ancillas.discard(A_sum)
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
 
-def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False):
+def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False, C_zero=False):
     """
     applies schoolbook multiplication, with classical input a
 
@@ -260,18 +272,20 @@ def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False):
                 cin = cout
 
             # finish performing the carries
-            for c in C[i+len(B):]:
-                cout = ancillas.new()
-                half_adder(circ, cin, c, cout)
-                ancillas.discard(cin)
-                cin = cout
+            if not C_zero:
+                for c in C[i+len(B):]:
+                    cout = ancillas.new()
+                    half_adder(circ, cin, c, cout)
+                    ancillas.discard(cin)
+                    cin = cout
+            elif len(C) > i+len(B):
+                circ.append(cirq.CNOT(cin, C[i+len(B)]))
 
             ancillas.discard(cin)
 
         a >>= 1
 
-# TODO: add flag if we know C is zero?
-def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflow=False):
+def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflow=False, C_zero=False):
     """
     applies karatsuba multiplication with one classical input
 
@@ -307,14 +321,14 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
         a_high = a>>A_break
         B_high = B[B_break:]
 
-        karatsuba_classical_mult(circ, a_low, B_low, C, ancillas, cutoff)
+        karatsuba_classical_mult(circ, a_low, B_low, C, ancillas, cutoff, C_zero=C_zero)
         karatsuba_classical_mult(circ, a_low, B_high, C[B_break:], ancillas, cutoff, allow_overflow=True)
         karatsuba_classical_mult(circ, a_high, B_low, C[A_break:], ancillas, cutoff, allow_overflow=True)
         return
 
     # base case
     if any(l <= _cutoff for l in (len_a, len(B), len(C))):
-        schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=allow_overflow)
+        schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=allow_overflow, C_zero=C_zero)
         return
 
     AB_break = min(len_a, len(B))//2
@@ -328,14 +342,24 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     C_mid  = ancillas.new_register(a_high.bit_length()+len(B_high)+2)
 
     # just using C_mid here to avoid extra allocation of C_low
-    karatsuba_classical_mult(circ, a_low, B_low, C_mid, ancillas, cutoff)
-    add_int(circ, C_mid, C, ancillas)  # C += C_low
+    karatsuba_classical_mult(circ, a_low, B_low, C_mid, ancillas, cutoff, C_zero=True)
+    if C_zero:
+        copy_register(circ, C_mid[:2*AB_break], C[:2*AB_break])
+    else:
+        add_int(circ, C_mid, C, ancillas)  # C += C_low
 
-    C_high = ancillas.new_register(a_high.bit_length()+len(B_high))
-    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff)
-    add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+    C_high_size = a_high.bit_length()+len(B_high)
+    if C_zero:
+        C_high = C[2*AB_break:2*AB_break+C_high_size]
+    else:
+        C_high = ancillas.new_register(C_high_size)
+
+    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff, C_zero=True)
     add_int(circ, C_high, C_mid, ancillas)
-    ancillas.discard(C_high)
+
+    if not C_zero:
+        add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+        ancillas.discard(C_high)
 
     a_sum = a_low + a_high
 
@@ -357,8 +381,7 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
 
-# TODO: add a flag to skip extra carries if we know B is empty
-def schoolbook_square(circ, A, B, ancillas):
+def schoolbook_square(circ, A, B, ancillas, C_zero=False):
     """
     squares the integer in the A register, and adds the result to
     the B register.
@@ -398,16 +421,19 @@ def schoolbook_square(circ, A, B, ancillas):
 
         # finish performing the carries
         b_idx += 1
-        for b in B[b_idx:]:
-            cout = ancillas.new()
-            half_adder(circ, cin, b, cout)
-            ancillas.discard(cin)
-            cin = cout
+        if not C_zero:
+            for b in B[b_idx:]:
+                cout = ancillas.new()
+                half_adder(circ, cin, b, cout)
+                ancillas.discard(cin)
+                cin = cout
+        elif len(B) > b_idx:
+            circ.append(cirq.CNOT(cin, B[b_idx]))
 
         ancillas.discard(cin)
 
 # TODO: add flag if we know C is zero
-def karatsuba_square(circ, A, C, ancillas, cutoff=None):
+def karatsuba_square(circ, A, C, ancillas, cutoff=None, C_zero=False):
     """
     applies karatsuba multiplication to square A
 
@@ -424,28 +450,37 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=None):
 
     # base case
     if len(A) <= _cutoff:
-        schoolbook_square(circ, A, C, ancillas)
+        schoolbook_square(circ, A, C, ancillas, C_zero=C_zero)
         return
 
     A_break = len(A)//2
     A_low = A[:A_break]
     A_high = A[A_break:]
 
-    # TODO: does this use too much space? I think it's actually OK
-    C_low = ancillas.new_register(2*A_break)
-    karatsuba_square(circ, A_low, C_low, ancillas, cutoff)
-    add_int(circ, C_low, C, ancillas)
-    ancillas.discard(C_low)
+    if C_zero:
+        C_low = C[:2*A_break]
+    else:
+        C_low = ancillas.new_register(2*A_break)
+
+    karatsuba_square(circ, A_low, C_low, ancillas, cutoff, C_zero=True)
+
+    if not C_zero:
+        add_int(circ, C_low, C, ancillas)
+        ancillas.discard(C_low)
+        C_high = ancillas.new_register(2*(len(A)-A_break))
+    else:
+        C_high = C[2*A_break:]
+
+    karatsuba_square(circ, A_high, C_high, ancillas, cutoff, C_zero=True)
+
+    if not C_zero:
+        add_int(circ, C_high, C[2*A_break:], ancillas)
+        ancillas.discard(C_high)
 
     C_mid = ancillas.new_register(len(A))
-    karatsuba_mult(circ, A_low, A_high, C_mid, ancillas, cutoff)
+    karatsuba_mult(circ, A_low, A_high, C_mid, ancillas, cutoff, C_zero=True)
     add_int(circ, C_mid, C[A_break+1:], ancillas)
     ancillas.discard(C_mid)
-
-    C_high = ancillas.new_register(2*(len(A)-A_break))
-    karatsuba_square(circ, A_high, C_high, ancillas, cutoff)
-    add_int(circ, C_high, C[2*A_break:], ancillas)
-    ancillas.discard(C_high)
 
 def montgomery_reduce(circ, T, ancillas, N, mult=None):
 
@@ -464,7 +499,7 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
 
     m = ancillas.new_register(r)
     #print('m=Np*T')
-    mult(circ, Np, T[:r], m, ancillas, allow_overflow=True)
+    mult(circ, Np, T[:r], m, ancillas, allow_overflow=True, C_zero=True)
     #print('T+=Nm')
     mult(circ, N, m, T, ancillas)
     ancillas.discard(m)
@@ -500,11 +535,11 @@ def extended_gcd(a, b):
 
 def x2_mod_N(circ, N, x, y, ancillas, mult_type):
     if mult_type == "karatsuba":
-        karatsuba_square(circ, x, y, ancillas)
+        karatsuba_square(circ, x, y, ancillas, C_zero=True)
         R = montgomery_reduce(circ, y, ancillas, N, mult=karatsuba_classical_mult)
 
     elif mult_type == "schoolbook":
-        schoolbook_square(circ, x, y, ancillas)
+        schoolbook_square(circ, x, y, ancillas, C_zero=True)
         R = montgomery_reduce(circ, y, ancillas, N, mult=schoolbook_classical_mult)
 
     else:
