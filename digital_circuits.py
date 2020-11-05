@@ -277,11 +277,13 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     """
     len_a = a.bit_length() if a>=0 else len(C)
 
+    #print(len_a, len(B), len(C))
+
     if not allow_overflow and len(C) < len_a+len(B):
         raise ValueError("register C not large enough to store result")
 
     if cutoff is None:
-        _cutoff = 256  # TODO: something weird is going on---does it have to be that high?
+        _cutoff = 32  # TODO: something weird is going on---does it have to be that high?
     else:
         _cutoff = cutoff
 
@@ -440,13 +442,16 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
     _, Np = extended_gcd(R, N)
 
     m = ancillas.new_register(r)
+    #print('m=Np*T')
     mult(circ, Np, T[:r], m, ancillas, allow_overflow=True)
+    #print('T+=Nm')
     mult(circ, N, m, T, ancillas)
     ancillas.discard(m)
 
     b = ancillas.new()
     lessthan_classical(circ, T[r:], N, b, ancillas)
     circ.append(cirq.X(b))
+    #print('T-=N')
     schoolbook_classical_mult(circ, -N, [b], T[r:], ancillas, allow_overflow=True)
 
     return R
