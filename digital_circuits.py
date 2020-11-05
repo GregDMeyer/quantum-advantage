@@ -1,7 +1,5 @@
 
 # TODO:
-#  - optimize karatsuba cutoffs
-#  - decompose toffoli gates
 #  - optimize for when we know output register is zero
 
 import cirq
@@ -290,12 +288,32 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     else:
         _cutoff = cutoff
 
-    if _cutoff < 3:
+    if _cutoff < 4:
         # otherwise we end up infinitely recursing
-        raise ValueError("cutoff must be >= 3")
+        raise ValueError("cutoff must be >= 4")
+
+    # if C has the same length as a and B, it doesn't make sense to do the full karatsuba
+    if allow_overflow and len(C)>4:
+        if len_a > len(B):
+            B_break = len(C) // 2
+            A_break = len(C) - B_break
+        else:
+            A_break = len(C) // 2
+            B_break = len(C) - A_break
+
+        a_low = a & ((1<<A_break)-1)
+        B_low = B[:B_break]
+
+        a_high = a>>A_break
+        B_high = B[B_break:]
+
+        karatsuba_classical_mult(circ, a_low, B_low, C, ancillas, cutoff)
+        karatsuba_classical_mult(circ, a_low, B_high, C[B_break:], ancillas, cutoff, allow_overflow=True)
+        karatsuba_classical_mult(circ, a_high, B_low, C[A_break:], ancillas, cutoff, allow_overflow=True)
+        return
 
     # base case
-    if any(l <= _cutoff for l in (len_a, len(B))):
+    if any(l <= _cutoff for l in (len_a, len(B), len(C))):
         schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=allow_overflow)
         return
 
@@ -307,30 +325,23 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     a_high = a>>AB_break
     B_high = B[AB_break:]
 
-    # if C has the same length as a and B, it doesn't make sense to do the full karatsuba
-    # if allow_overflow:
-    #     karatsuba_classical_mult(circ, a_low, B_low, C, ancillas, cutoff)
-    #     karatsuba_classical_mult(circ, a_low, B_high, C[AB_break:], ancillas, cutoff, allow_overflow)
-    #     karatsuba_classical_mult(circ, a_high, B_low, C[AB_break:], ancillas, cutoff, allow_overflow)
-    #     return
-
     C_mid  = ancillas.new_register(a_high.bit_length()+len(B_high)+2)
 
     # just using C_mid here to avoid extra allocation of C_low
-    karatsuba_classical_mult(circ, a_low, B_low, C_mid, ancillas, cutoff, allow_overflow=allow_overflow)
-    add_int(circ, C_mid, C, ancillas, allow_overflow=allow_overflow)  # C += C_low
+    karatsuba_classical_mult(circ, a_low, B_low, C_mid, ancillas, cutoff)
+    add_int(circ, C_mid, C, ancillas)  # C += C_low
 
     C_high = ancillas.new_register(a_high.bit_length()+len(B_high))
-    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff, allow_overflow=allow_overflow)
-    add_int(circ, C_high, C[2*AB_break:], ancillas, allow_overflow=allow_overflow) # C += C_high
-    add_int(circ, C_high, C_mid, ancillas, allow_overflow=allow_overflow)
+    karatsuba_classical_mult(circ, a_high, B_high, C_high, ancillas, cutoff)
+    add_int(circ, C_high, C[2*AB_break:], ancillas) # C += C_high
+    add_int(circ, C_high, C_mid, ancillas)
     ancillas.discard(C_high)
 
     a_sum = a_low + a_high
 
     B_sum = ancillas.new_register(len(B_high)+1)
     copy_register(circ, B_low, B_sum)
-    add_int(circ, B_high, B_sum, ancillas, allow_overflow=allow_overflow)
+    add_int(circ, B_high, B_sum, ancillas)
 
     # negate the sum of C_low and C_high (stored in C_mid)
     # in 2s complement, this is a bit flip + 1
@@ -339,9 +350,9 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     add_classical_int(circ, 1, C_mid, ancillas)
 
     # finally add in the product of A_sum and B_sum
-    karatsuba_classical_mult(circ, a_sum, B_sum, C_mid, ancillas, cutoff, allow_overflow=allow_overflow)
+    karatsuba_classical_mult(circ, a_sum, B_sum, C_mid, ancillas, cutoff)
 
-    add_int(circ, C_mid, C[AB_break:], ancillas, allow_overflow=allow_overflow)
+    add_int(circ, C_mid, C[AB_break:], ancillas)
 
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)

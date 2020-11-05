@@ -280,7 +280,7 @@ class TestArithmetic(unittest.TestCase):
 
         mult_methods = [
             ("schoolbook", schoolbook_classical_mult),
-            ("karatsuba", lambda *args: karatsuba_classical_mult(*args, cutoff=3))
+            ("karatsuba", lambda *args: karatsuba_classical_mult(*args, cutoff=4))
         ]
 
         for name, mult in mult_methods:
