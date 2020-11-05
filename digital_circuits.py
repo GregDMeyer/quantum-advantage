@@ -8,8 +8,8 @@ def half_adder(circ, A, B, Cout):
     inputs:  A  B    Cout
     outputs: A  A+B  Cout+(A+B)/2
     """
-    circ.my_append(cirq.TOFFOLI(A, B, Cout))
-    circ.my_append(cirq.CNOT(A, B))
+    circ.append(cirq.TOFFOLI(A, B, Cout))
+    circ.append(cirq.CNOT(A, B))
 
 def full_adder(circ, A, B, Cin, Cout):
     """
@@ -21,10 +21,10 @@ def full_adder(circ, A, B, Cin, Cout):
     the qubits A and Cin are measured in the H basis and zeroed
     after the adder is performed.
     """
-    circ.my_append(cirq.TOFFOLI(A, B, Cout))
-    circ.my_append(cirq.CNOT(A, B))
-    circ.my_append(cirq.TOFFOLI(B, Cin, Cout))
-    circ.my_append(cirq.CNOT(Cin, B))
+    circ.append(cirq.TOFFOLI(A, B, Cout))
+    circ.append(cirq.CNOT(A, B))
+    circ.append(cirq.TOFFOLI(B, Cin, Cout))
+    circ.append(cirq.CNOT(Cin, B))
 
 def copy_register(circ, A, B):
     """
@@ -37,7 +37,7 @@ def copy_register(circ, A, B):
         raise ValueError("register B must be at least as long as A")
 
     for a, b in zip(A, B):
-        circ.my_append(cirq.CNOT(a, b))
+        circ.append(cirq.CNOT(a, b))
 
 def add_int(circ, A, B, ancillas, allow_overflow=False):
     """
@@ -90,11 +90,11 @@ def add_classical_int(circ, x, A, ancillas, control=None):
             half_adder(circ, cin, a, cout)
         else:
             # it's a half adder + 1
-            circ.my_append(Xgate(cin))
-            circ.my_append(Xgate(a))
+            circ.append(Xgate(cin))
+            circ.append(Xgate(a))
             half_adder(circ, cin, a, cout)
-            circ.my_append(Xgate(a))
-            circ.my_append(Xgate(cout))
+            circ.append(Xgate(a))
+            circ.append(Xgate(cout))
 
         ancillas.discard(cin)
         cin = cout
@@ -107,25 +107,25 @@ def lessthan_classical(circ, A, x, b, ancillas):
     """
     if x.bit_length() > len(A):
         # x is certainly larger than A
-        circ.my_append(cirq.X(b))
+        circ.append(cirq.X(b))
         return
 
     # whether they are equal, starts as 1
     eq = ancillas.new()
-    circ.my_append(cirq.X(eq))
+    circ.append(cirq.X(eq))
 
     for i,a in reversed(list(enumerate(A))):
         eq_out = ancillas.new()
-        circ.my_append(cirq.CNOT(eq, eq_out))
+        circ.append(cirq.CNOT(eq, eq_out))
         if (x&(1<<i)) == 0:
             # if a is 1, they are not equal
-            circ.my_append(cirq.TOFFOLI(eq, a, eq_out))
+            circ.append(cirq.TOFFOLI(eq, a, eq_out))
         else:
             # if a is 0 and they are equal so far, a is less and they are not equal
-            circ.my_append(cirq.X(a))
-            circ.my_append(cirq.TOFFOLI(eq, a, b))
-            circ.my_append(cirq.TOFFOLI(eq, a, eq_out))
-            circ.my_append(cirq.X(a))
+            circ.append(cirq.X(a))
+            circ.append(cirq.TOFFOLI(eq, a, b))
+            circ.append(cirq.TOFFOLI(eq, a, eq_out))
+            circ.append(cirq.X(a))
 
         ancillas.discard(eq)
         eq = eq_out
@@ -146,7 +146,7 @@ def schoolbook_mult(circ, A, B, C, ancillas, C_zero=False):
         cin = ancillas.new()
         for j,b in enumerate(B):
             d = ancillas.new()
-            circ.my_append(cirq.TOFFOLI(a, b, d))
+            circ.append(cirq.TOFFOLI(a, b, d))
 
             cout = ancillas.new()
             full_adder(circ, d, C[i+j], cin, cout)
@@ -163,7 +163,7 @@ def schoolbook_mult(circ, A, B, C, ancillas, C_zero=False):
                 ancillas.discard(cin)
                 cin = cout
         else:
-            circ.my_append(cirq.CNOT(cin, C[i+len(B)]))
+            circ.append(cirq.CNOT(cin, C[i+len(B)]))
 
         ancillas.discard(cin)
 
@@ -234,7 +234,7 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None, C_zero=False):
     # negate the sum of C_low and C_high (stored in C_mid)
     # in 2s complement, this is a bit flip + 1
     for c in C_mid:
-        circ.my_append(cirq.X(c))
+        circ.append(cirq.X(c))
     add_classical_int(circ, 1, C_mid, ancillas)
 
     # finally add in the product of A_sum and B_sum
@@ -276,7 +276,7 @@ def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False, C_z
                     ancillas.discard(cin)
                     cin = cout
             elif len(C) > i+len(B):
-                circ.my_append(cirq.CNOT(cin, C[i+len(B)]))
+                circ.append(cirq.CNOT(cin, C[i+len(B)]))
 
             ancillas.discard(cin)
 
@@ -367,7 +367,7 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     # negate the sum of C_low and C_high (stored in C_mid)
     # in 2s complement, this is a bit flip + 1
     for c in C_mid:
-        circ.my_append(cirq.X(c))
+        circ.append(cirq.X(c))
     add_classical_int(circ, 1, C_mid, ancillas)
 
     # finally add in the product of A_sum and B_sum
@@ -396,7 +396,7 @@ def schoolbook_square(circ, A, B, ancillas, C_zero=False):
                 a = A[i]
             else:
                 a = ancillas.new()
-                circ.my_append(cirq.TOFFOLI(A[i], A[j], a))
+                circ.append(cirq.TOFFOLI(A[i], A[j], a))
 
             b_idx = i+j+(i!=j)
 
@@ -425,7 +425,7 @@ def schoolbook_square(circ, A, B, ancillas, C_zero=False):
                 ancillas.discard(cin)
                 cin = cout
         elif len(B) > b_idx:
-            circ.my_append(cirq.CNOT(cin, B[b_idx]))
+            circ.append(cirq.CNOT(cin, B[b_idx]))
 
         ancillas.discard(cin)
 
@@ -503,7 +503,7 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
 
     b = ancillas.new()
     lessthan_classical(circ, T[r:], N, b, ancillas)
-    circ.my_append(cirq.X(b))
+    circ.append(cirq.X(b))
     #print('T-=N')
     add_classical_int(circ, -N, T[r:], ancillas, b)
 

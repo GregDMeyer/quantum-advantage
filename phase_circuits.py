@@ -75,12 +75,10 @@ def qft(circ, reg):
             circ.append(cirq.CZ(ym, yk)**phase)
         circ.append(cirq.H(yk))
 
-def x2_mod_N_phase(N, x, y, ancillas, circuit_type):
+def x2_mod_N_phase(circ, N, x, y, ancillas, circuit_type):
     '''
     Generate the full circuit
     '''
-    circ = cirq.Circuit()
-
     for q in itertools.chain(x, y):
         circ.append(cirq.H(q))
 
