@@ -5,11 +5,11 @@ from itertools import product, combinations_with_replacement
 import random
 import cirq
 
-from circuits import full_adder, half_adder, add_int, add_classical_int, lessthan_classical
-from circuits import schoolbook_square, karatsuba_square
-from circuits import schoolbook_mult, karatsuba_mult
-from circuits import schoolbook_classical_mult, karatsuba_classical_mult
-from circuits import extended_gcd, montgomery_reduce, x2_mod_N
+from digital_circuits import full_adder, half_adder, add_int, add_classical_int, lessthan_classical
+from digital_circuits import schoolbook_square, karatsuba_square
+from digital_circuits import schoolbook_mult, karatsuba_mult
+from digital_circuits import schoolbook_classical_mult, karatsuba_classical_mult
+from digital_circuits import extended_gcd, montgomery_reduce, x2_mod_N
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 

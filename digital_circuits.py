@@ -73,7 +73,7 @@ def add_int(circ, A, B, ancillas, allow_overflow=False):
         ancillas.discard(cin)
         cin = cout
 
-def add_classical_int(circ, x, A, ancillas):
+def add_classical_int(circ, x, A, ancillas, control=None):
     """
     add the classical integer x to register A
 
@@ -83,6 +83,11 @@ def add_classical_int(circ, x, A, ancillas):
     if x.bit_length() > len(A):
         raise ValueError("x too large to add to A")
 
+    if control is None:
+        Xgate = cirq.X
+    else:
+        Xgate = lambda q: cirq.CNOT(control, q)
+
     cin = ancillas.new()
     for a in A:
         cout = ancillas.new()
@@ -90,11 +95,11 @@ def add_classical_int(circ, x, A, ancillas):
             half_adder(circ, cin, a, cout)
         else:
             # it's a half adder + 1
-            circ.append(cirq.X(cin))
-            circ.append(cirq.X(a))
+            circ.append(Xgate(cin))
+            circ.append(Xgate(a))
             half_adder(circ, cin, a, cout)
-            circ.append(cirq.X(a))
-            circ.append(cirq.X(cout))
+            circ.append(Xgate(a))
+            circ.append(Xgate(cout))
 
         ancillas.discard(cin)
         cin = cout
@@ -277,13 +282,11 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     """
     len_a = a.bit_length() if a>=0 else len(C)
 
-    #print(len_a, len(B), len(C))
-
     if not allow_overflow and len(C) < len_a+len(B):
         raise ValueError("register C not large enough to store result")
 
     if cutoff is None:
-        _cutoff = 32  # TODO: something weird is going on---does it have to be that high?
+        _cutoff = 32
     else:
         _cutoff = cutoff
 
@@ -303,6 +306,13 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
 
     a_high = a>>AB_break
     B_high = B[AB_break:]
+
+    # if C has the same length as a and B, it doesn't make sense to do the full karatsuba
+    # if allow_overflow:
+    #     karatsuba_classical_mult(circ, a_low, B_low, C, ancillas, cutoff)
+    #     karatsuba_classical_mult(circ, a_low, B_high, C[AB_break:], ancillas, cutoff, allow_overflow)
+    #     karatsuba_classical_mult(circ, a_high, B_low, C[AB_break:], ancillas, cutoff, allow_overflow)
+    #     return
 
     C_mid  = ancillas.new_register(a_high.bit_length()+len(B_high)+2)
 
@@ -452,7 +462,7 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
     lessthan_classical(circ, T[r:], N, b, ancillas)
     circ.append(cirq.X(b))
     #print('T-=N')
-    schoolbook_classical_mult(circ, -N, [b], T[r:], ancillas, allow_overflow=True)
+    add_classical_int(circ, -N, T[r:], ancillas, b)
 
     return R
 

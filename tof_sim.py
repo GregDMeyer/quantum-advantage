@@ -15,7 +15,7 @@ class ToffoliSimulator:
         if qubits is None:
             qubits = list(c.all_qubits())
         self.qubits = qubits
-        
+
         self.phase = 1
 
     def simulate(self, state):
@@ -31,7 +31,7 @@ class ToffoliSimulator:
         """
         for moment in self.circuit:
             for op in moment:
-                if not any(op.gate is g for g in self.allowed_gates):
+                if not any(op.gate == g for g in self.allowed_gates):
                     raise ValueError(f"unsupported gate type '{op.gate}'")
 
                 if all(state[q] for q in op.qubits[:-1]):

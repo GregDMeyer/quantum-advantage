@@ -5,9 +5,9 @@ from sys import argv
 import cirq
 from main import describe
 from ancilla import AncillaManager
-from circuits import karatsuba_mult, schoolbook_mult
-from circuits import karatsuba_square, schoolbook_square
-from circuits import karatsuba_classical_mult, schoolbook_classical_mult
+from digital_circuits import karatsuba_mult, schoolbook_mult
+from digital_circuits import karatsuba_square, schoolbook_square
+from digital_circuits import karatsuba_classical_mult, schoolbook_classical_mult
 
 def compare_counts(cutoff, karatsuba, schoolbook):
     ck = cirq.Circuit()
