@@ -14,9 +14,17 @@ def parse_args():
                    help='a comma separated list of problem sizes to compute')
     p.add_argument('-p', choices=['gates', 'depth', 'off'], default='gates',
                    help='which parameter to plot, or "off"')
-    p.add_argument('--method', choices=['schoolbook', 'karatsuba', 'narrow', 'fast'])
+    p.add_argument('-d', action='store_true', help='compute depth')
+
+    all_methods = ['karatsuba', 'schoolbook', 'narrow', 'fast']
+    p.add_argument('--methods', type=lambda x: x.split(','), default=all_methods)
 
     args = p.parse_args()
+
+    for m in args.methods:
+        if m not in all_methods:
+            raise ValueError(f"unrecognized method '{m}'")
+
     return args
 
 def describe(c):
@@ -67,7 +75,9 @@ def main():
         'fast'
     ]
 
-    header = ['impl', 'n', 'gates', 'depth']
+    header = ['impl', 'n', 'gates']
+    if args.d:
+        header.append('depth')
     print(','.join(header))
 
     ydata = {impl:[] for impl in digital_impls+phase_impls}
@@ -75,10 +85,18 @@ def main():
         # for a fair comparison across implementations
         N = randint(0, 2**n-1) | 1 | (1<<(n-1))
         for impl in digital_impls:
-            if args.method is not None and impl != args.method:
+            if impl not in args.methods:
                 continue
 
             c = cirq.Circuit()
+
+            # adjust the default insertstrategy
+            # this is kind of dumb, but alas
+            if args.d:
+                c.my_append = lambda arg: c.append(arg, cirq.InsertStrategy.EARLIEST)
+            else:
+                c.my_append = lambda arg: c.append(arg, cirq.InsertStrategy.NEW)
+
             x_reg = cirq.NamedQubit.range(n, prefix="x")
             y_reg = cirq.NamedQubit.range(2*n+1, prefix="y")
             ancillas = AncillaManager()
@@ -86,14 +104,14 @@ def main():
             x2_mod_N(c, N, x_reg, y_reg, ancillas, impl)
 
             gates, depth = describe(c)
-            print(f"{impl}, {n}, {gates}, {depth}")
+            print(f"{impl}, {n}, {gates}" + (f", {depth}" if args.d else ""))
 
             if args.p != 'off':
                 ydata[impl].append({'gates':gates,
                                     'depth':depth}[args.p])
 
         for impl in phase_impls:
-            if args.method is not None and impl != args.method:
+            if impl not in args.methods:
                 continue
 
             x_reg = cirq.NamedQubit.range(n, prefix="x")
