@@ -1,5 +1,4 @@
 
-from math import pi
 import itertools
 import cirq
 
@@ -38,6 +37,8 @@ def x2modN_fast(circ, x, y, ancillas, N):
 
     for q in counter:
         circ.append(cirq.H(q))
+
+    ancillas.discard(counter)
 
 def count(circ, x, counter, pairs, sign):
     for i,j in pairs:

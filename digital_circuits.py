@@ -68,6 +68,8 @@ def add_int(circ, A, B, ancillas, allow_overflow=False):
         ancillas.discard(cin)
         cin = cout
 
+    ancillas.discard(cin)
+
 def add_classical_int(circ, x, A, ancillas, control=None):
     """
     add the classical integer x to register A
@@ -99,6 +101,8 @@ def add_classical_int(circ, x, A, ancillas, control=None):
         ancillas.discard(cin)
         cin = cout
         x >>= 1
+
+    ancillas.discard(cin)
 
 def lessthan_classical(circ, A, x, b, ancillas):
     """
@@ -506,6 +510,7 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
     circ.append(cirq.X(b))
     #print('T-=N')
     add_classical_int(circ, -N, T[r:], ancillas, b)
+    ancillas.discard(b)
 
     return R
 

@@ -1,7 +1,7 @@
 
 from argparse import ArgumentParser
 import cirq
-from phase_circuits import x2_circuit
+from phase_circuits import x2_mod_N_phase
 from ancilla import AncillaManager
 
 def parse_args():
@@ -62,7 +62,8 @@ def main():
     ancillas = AncillaManager()
 
     simulator = cirq.Simulator()
-    circuit = x2_circuit(N, x, y, ancillas, args.t)
+    circuit = cirq.Circuit()
+    x2_mod_N_phase(circuit, N, x, y, ancillas, args.t)
 
     registers = x, y, ancillas.all()
     result = simulator.simulate(circuit, qubit_order=[q for r in registers for q in r][::-1])

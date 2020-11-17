@@ -1,6 +1,8 @@
 
 from argparse import ArgumentParser
 from random import randint
+from sys import stderr
+
 import cirq
 from digital_circuits import x2_mod_N
 from phase_circuits import x2_mod_N_phase
@@ -77,7 +79,7 @@ def main():
         'fast'
     ]
 
-    header = ['impl', 'n', 'gates', 't_gates']
+    header = ['impl', 'n', 'gates', 't_gates', 'qubits']
     if args.d:
         header.append('depth')
     print(','.join(header))
@@ -112,8 +114,12 @@ def main():
             else:
                 raise ValueError("unknown implementation")
 
+            if not ancillas.all_discarded():
+                print(f"qubit memory leak! {ancillas.n_active} ancillas not discarded", file=stderr)
+
             gates, t_gates, depth = describe(c)
-            print(f"{impl}, {n}, {gates}, {t_gates}" + (f", {depth}" if args.d else ""))
+            qubits = len(x_reg) + len(y_reg) + ancillas.max_ancilla_usage()
+            print(f"{impl}, {n}, {gates}, {t_gates}, {qubits}" + (f", {depth}" if args.d else ""))
 
             if args.p != 'off':
                 ydata[impl].append({'gates':gates,
