@@ -197,7 +197,7 @@ class TestArithmetic(unittest.TestCase):
 
         square_methods = [
             ("schoolbook", schoolbook_square),
-            ("karatsuba", lambda *args: karatsuba_square(*args, cutoff=3))
+            ("karatsuba", lambda *args: karatsuba_square(*args, cutoff=4))
         ]
 
         for name, square in square_methods:
@@ -229,13 +229,13 @@ class TestArithmetic(unittest.TestCase):
                             self.assertEqual(rb, (b+a**2)%(2**(2*n)))
 
     def test_mult(self):
-        n = 4
+        n = 5
         m = 5
         test_cases = product(range(2**n), range(2**m))
 
         mult_methods = [
             ("schoolbook", schoolbook_mult),
-            ("karatsuba", lambda *args: karatsuba_mult(*args, cutoff=3))
+            ("karatsuba", lambda *args: karatsuba_mult(*args, cutoff=4))
         ]
 
         for name, mult in mult_methods:
@@ -275,7 +275,7 @@ class TestArithmetic(unittest.TestCase):
                                 self.assertEqual(rc, (c+a*b)%(2**(n+m)))
 
     def test_classical_mult(self):
-        n = 4
+        n = 5
         a_test_cases = b_test_cases = range(2**n)
 
         mult_methods = [

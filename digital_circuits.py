@@ -1,43 +1,19 @@
 
 import cirq
 
-def half_adder(circ, A, B, Cout):
-    """
-    appends a half adder to circuit circ.
+def x2_mod_N(circ, N, x, y, ancillas, mult_type):
+    if mult_type == "karatsuba":
+        karatsuba_square(circ, x, y, ancillas, C_zero=True)
+        R = montgomery_reduce(circ, y, ancillas, N, mult=karatsuba_classical_mult)
 
-    inputs:  A  B    Cout
-    outputs: A  A+B  Cout+(A+B)/2
-    """
-    circ.append(cirq.TOFFOLI(A, B, Cout))
-    circ.append(cirq.CNOT(A, B))
+    elif mult_type == "schoolbook":
+        schoolbook_square(circ, x, y, ancillas, C_zero=True)
+        R = montgomery_reduce(circ, y, ancillas, N, mult=schoolbook_classical_mult)
 
-def full_adder(circ, A, B, Cin, Cout):
-    """
-    appends a "full adder" circuit to circuit circ.
+    else:
+        raise ValueError(f"unknown mult type '{mult_type}'")
 
-    inputs:   A  B         Cin  Cout
-    outputs:  A  A+B+Cin%2 Cin  Cout+(A+B+C/2)
-
-    the qubits A and Cin are measured in the H basis and zeroed
-    after the adder is performed.
-    """
-    circ.append(cirq.TOFFOLI(A, B, Cout))
-    circ.append(cirq.CNOT(A, B))
-    circ.append(cirq.TOFFOLI(B, Cin, Cout))
-    circ.append(cirq.CNOT(Cin, B))
-
-def copy_register(circ, A, B):
-    """
-    XOR the contents of A into B (thus copying them if B is empty)
-
-    inputs:   A  B
-    outputs:  A  A xor B
-    """
-    if len(A) > len(B):
-        raise ValueError("register B must be at least as long as A")
-
-    for a, b in zip(A, B):
-        circ.append(cirq.CNOT(a, b))
+    return R
 
 def add_int(circ, A, B, ancillas, allow_overflow=False):
     """
@@ -143,8 +119,7 @@ def schoolbook_mult(circ, A, B, C, ancillas, C_zero=False):
     inputs:   A  B  C
     outputs:  A  B  C+A*B
     """
-    if len(C) < len(A)+len(B):
-        raise ValueError("register C not large enough to store result")
+    check_mult_sizes(A, B, C)
 
     for i,a in enumerate(A):
         cin = ancillas.new()
@@ -171,7 +146,91 @@ def schoolbook_mult(circ, A, B, C, ancillas, C_zero=False):
 
         ancillas.discard(cin)
 
-# TODO: add flag if we know C is zero?
+def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False, C_zero=False):
+    """
+    applies schoolbook multiplication, with classical input a
+
+    inputs:   B  C
+    outputs:  B  C+a*B
+    """
+    if not allow_overflow:
+        check_mult_sizes(a, B, C)
+
+    for i in range(a.bit_length() if a>=0 else len(C)):
+        if a&1:
+            cin = ancillas.new()
+            for j,b in enumerate(B):
+                if i+j >= len(C):
+                    break
+                cout = ancillas.new()
+                full_adder(circ, b, C[i+j], cin, cout)
+                ancillas.discard(cin)
+                cin = cout
+
+            # finish performing the carries
+            if not C_zero:
+                for c in C[i+len(B):]:
+                    cout = ancillas.new()
+                    half_adder(circ, cin, c, cout)
+                    ancillas.discard(cin)
+                    cin = cout
+            elif len(C) > i+len(B):
+                circ.append(cirq.CNOT(cin, C[i+len(B)]))
+
+            ancillas.discard(cin)
+
+        a >>= 1
+
+def schoolbook_square(circ, A, B, ancillas, C_zero=False):
+    """
+    squares the integer in the A register, and adds the result to
+    the B register.
+
+    inputs:   A  B
+    outputs:  A  B+A^2
+    """
+    check_mult_sizes(A, A, B)
+
+    for i in range(len(A)):
+        cin = ancillas.new()
+        for j in range(i, len(A)):
+            if i == j:
+                a = A[i]
+            else:
+                a = ancillas.new()
+                circ.append(cirq.TOFFOLI(A[i], A[j], a))
+
+            b_idx = i+j+(i!=j)
+
+            cout = ancillas.new()
+            full_adder(circ, a, B[b_idx], cin, cout)
+            ancillas.discard(cin)
+            cin = cout
+
+            if i == j:
+                # we need to carry an extra bit when i == j, because we are
+                # skipping one
+                b_idx += 1
+                cout = ancillas.new()
+                half_adder(circ, cin, B[b_idx], cout)
+                ancillas.discard(cin)
+                cin = cout
+            else:
+                ancillas.discard(a)
+
+        # finish performing the carries
+        b_idx += 1
+        if not C_zero:
+            for b in B[b_idx:]:
+                cout = ancillas.new()
+                half_adder(circ, cin, b, cout)
+                ancillas.discard(cin)
+                cin = cout
+        elif len(B) > b_idx:
+            circ.append(cirq.CNOT(cin, B[b_idx]))
+
+        ancillas.discard(cin)
+
 def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None, C_zero=False):
     """
     applies karatsuba multiplication
@@ -179,21 +238,14 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None, C_zero=False):
     inputs:   A  B  C
     outputs:  A  B  C+A*B
     """
-    if len(C) < len(A)+len(B):
-        raise ValueError("register C not large enough to store result")
+    check_mult_sizes(A, B, C)
 
-    if cutoff is None:
-        _cutoff = 15  # found by optimization
-    else:
-        _cutoff = cutoff
-
-    if _cutoff < 3:
-        # otherwise we end up infinitely recursing
-        raise ValueError("cutoff must be >= 3")
+    # default found via optimize_cutoff.py
+    _cutoff = get_cutoff(cutoff, default=15)
 
     # base case
     if any(l <= _cutoff for l in (len(A), len(B))):
-        schoolbook_mult(circ, A, B, C, ancillas, C_zero=C_zero) # TODO
+        schoolbook_mult(circ, A, B, C, ancillas, C_zero=C_zero)
         return
 
     AB_break = min(len(A), len(B))//2
@@ -249,43 +301,6 @@ def karatsuba_mult(circ, A, B, C, ancillas, cutoff=None, C_zero=False):
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
 
-def schoolbook_classical_mult(circ, a, B, C, ancillas, allow_overflow=False, C_zero=False):
-    """
-    applies schoolbook multiplication, with classical input a
-
-    inputs:   B  C
-    outputs:  B  C+a*B
-    """
-    len_a = a.bit_length() if a>=0 else len(C)
-
-    if not allow_overflow and len(C) < len_a+len(B):
-        raise ValueError("register C not large enough to store result")
-
-    for i in range(len_a):
-        if a&1:
-            cin = ancillas.new()
-            for j,b in enumerate(B):
-                if i+j >= len(C):
-                    break
-                cout = ancillas.new()
-                full_adder(circ, b, C[i+j], cin, cout)
-                ancillas.discard(cin)
-                cin = cout
-
-            # finish performing the carries
-            if not C_zero:
-                for c in C[i+len(B):]:
-                    cout = ancillas.new()
-                    half_adder(circ, cin, c, cout)
-                    ancillas.discard(cin)
-                    cin = cout
-            elif len(C) > i+len(B):
-                circ.append(cirq.CNOT(cin, C[i+len(B)]))
-
-            ancillas.discard(cin)
-
-        a >>= 1
-
 def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflow=False, C_zero=False):
     """
     applies karatsuba multiplication with one classical input
@@ -293,21 +308,13 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     inputs:   B  C
     outputs:  B  C+a*B
     """
-    len_a = a.bit_length() if a>=0 else len(C)
+    if not allow_overflow:
+        check_mult_sizes(a, B, C)
 
-    if not allow_overflow and len(C) < len_a+len(B):
-        raise ValueError("register C not large enough to store result")
-
-    if cutoff is None:
-        _cutoff = 24
-    else:
-        _cutoff = cutoff
-
-    if _cutoff < 4:
-        # otherwise we end up infinitely recursing
-        raise ValueError("cutoff must be >= 4")
+    _cutoff = get_cutoff(cutoff, default=24)
 
     # if C has the same length as a and B, it doesn't make sense to do the full karatsuba
+    len_a = a.bit_length() if a>=0 else len(C)
     if allow_overflow and len(C)>4:
         if len_a > len(B):
             B_break = len(C) // 2
@@ -382,72 +389,15 @@ def karatsuba_classical_mult(circ, a, B, C, ancillas, cutoff=None, allow_overflo
     ancillas.discard(B_sum)
     ancillas.discard(C_mid)
 
-def schoolbook_square(circ, A, B, ancillas, C_zero=False):
-    """
-    squares the integer in the A register, and adds the result to
-    the B register.
-
-    inputs:   A  B
-    outputs:  A  B+A^2
-    """
-    if len(B) < 2*len(A):
-        raise ValueError("register B not long enough to store square")
-
-    for i in range(len(A)):
-        cin = ancillas.new()
-        for j in range(i, len(A)):
-            if i == j:
-                a = A[i]
-            else:
-                a = ancillas.new()
-                circ.append(cirq.TOFFOLI(A[i], A[j], a))
-
-            b_idx = i+j+(i!=j)
-
-            cout = ancillas.new()
-            full_adder(circ, a, B[b_idx], cin, cout)
-            ancillas.discard(cin)
-            cin = cout
-
-            if i == j:
-                # we need to carry an extra bit when i == j, because we are
-                # skipping one
-                b_idx += 1
-                cout = ancillas.new()
-                half_adder(circ, cin, B[b_idx], cout)
-                ancillas.discard(cin)
-                cin = cout
-            else:
-                ancillas.discard(a)
-
-        # finish performing the carries
-        b_idx += 1
-        if not C_zero:
-            for b in B[b_idx:]:
-                cout = ancillas.new()
-                half_adder(circ, cin, b, cout)
-                ancillas.discard(cin)
-                cin = cout
-        elif len(B) > b_idx:
-            circ.append(cirq.CNOT(cin, B[b_idx]))
-
-        ancillas.discard(cin)
-
-# TODO: add flag if we know C is zero
 def karatsuba_square(circ, A, C, ancillas, cutoff=None, C_zero=False):
     """
     applies karatsuba multiplication to square A
 
     inputs:   A  C
-    outputs:  A  C+A*B
+    outputs:  A  C+A*A
     """
-    if len(C) < 2*len(A):
-        raise ValueError("register C not large enough to store result")
-
-    if cutoff is None:
-        _cutoff = 15
-    else:
-        _cutoff = cutoff
+    check_mult_sizes(A, A, C)
+    _cutoff = get_cutoff(cutoff, default=15)
 
     # base case
     if len(A) <= _cutoff:
@@ -483,11 +433,25 @@ def karatsuba_square(circ, A, C, ancillas, cutoff=None, C_zero=False):
     add_int(circ, C_mid, C[A_break+1:], ancillas)
     ancillas.discard(C_mid)
 
-def montgomery_reduce(circ, T, ancillas, N, mult=None):
+### montgomery reduction
 
+def montgomery_reduce(circ, T, ancillas, N, mult=None):
+    """
+    Perform montgomery reduction on the register T, for some modulus N.
+
+    Takes the 2n digit value T and replaces it with the n-digit value (T/R) mod N,
+    followed by n zeros.
+
+    Returns the (classical) value R, which should be multiplied by T/R mod N after measurement
+    to ultimately yield T mod N classically.
+
+    The T register should also have one extra leading qubit that is initialized to zero (and
+    is returned as zero).
+    """
     if len(T) < 2*N.bit_length() + 1:
         raise ValueError("T too small for montgomery reduction")
 
+    # required for extended gcd to work
     if not N&1:
         raise ValueError("N must be odd")
 
@@ -499,23 +463,32 @@ def montgomery_reduce(circ, T, ancillas, N, mult=None):
     _, Np = extended_gcd(R, N)
 
     m = ancillas.new_register(r)
-    #print('m=Np*T')
+
+    # m = Np*T
     mult(circ, Np, T[:r], m, ancillas, allow_overflow=True, C_zero=True)
-    #print('T+=Nm')
+
+    # T += Nm
     mult(circ, N, m, T, ancillas)
     ancillas.discard(m)
 
+    # if T >= N
     b = ancillas.new()
     lessthan_classical(circ, T[r:], N, b, ancillas)
     circ.append(cirq.X(b))
-    #print('T-=N')
+
+    # then T -= N
     add_classical_int(circ, -N, T[r:], ancillas, b)
     ancillas.discard(b)
 
     return R
 
-# adapted from https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
 def extended_gcd(a, b):
+    """
+    Compute x and y such that ax - by = 1
+    (This function is completely classical)
+    """
+    # adapted from https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
+
     old_r, r = a, b
     old_s, s = 1, 0
     old_t, t = 0, 1
@@ -535,16 +508,78 @@ def extended_gcd(a, b):
 
     return old_s, -old_t
 
-def x2_mod_N(circ, N, x, y, ancillas, mult_type):
-    if mult_type == "karatsuba":
-        karatsuba_square(circ, x, y, ancillas, C_zero=True)
-        R = montgomery_reduce(circ, y, ancillas, N, mult=karatsuba_classical_mult)
+### bounds checking etc
 
-    elif mult_type == "schoolbook":
-        schoolbook_square(circ, x, y, ancillas, C_zero=True)
-        R = montgomery_reduce(circ, y, ancillas, N, mult=schoolbook_classical_mult)
+def check_mult_sizes(A, B, C):
+    """
+    bounds check for arguments to multiplication functions
+    """
 
+    # if it has a len, we consider it a register, otherwise an int
+    try:
+        len_a = len(A)
+    except TypeError:
+        # also, bit_length doesn't make sense for negative integers
+        if A < 0:
+            raise ValueError("allow_overflow required for negative integers") from None
+        len_a = A.bit_length()
+
+    if len(C) < len_a+len(B):
+        raise ValueError("register C not large enough to store result")
+
+def get_cutoff(cutoff_in, default):
+    """
+    find and validate the cutoff for recursing in Karatsuba algorithms
+
+    default values should be found using optimize_cutoffs.py
+    """
+    if cutoff_in is None:
+        rtn = default
     else:
-        raise ValueError(f"unknown mult type '{mult_type}'")
+        rtn = cutoff_in
 
-    return R
+    if rtn < 4:
+        # otherwise we end up infinitely recursing
+        raise ValueError("cutoff must be >= 4")
+
+    return rtn
+
+### smallest circuit building blocks
+
+def half_adder(circ, A, B, Cout):
+    """
+    appends a half adder to circuit circ.
+
+    inputs:  A  B    Cout
+    outputs: A  A+B  Cout+(A+B)/2
+    """
+    circ.append(cirq.TOFFOLI(A, B, Cout))
+    circ.append(cirq.CNOT(A, B))
+
+def full_adder(circ, A, B, Cin, Cout):
+    """
+    appends a "full adder" circuit to circuit circ.
+
+    inputs:   A  B         Cin  Cout
+    outputs:  A  A+B+Cin%2 Cin  Cout+(A+B+C/2)
+
+    the qubits A and Cin are measured in the H basis and zeroed
+    after the adder is performed.
+    """
+    circ.append(cirq.TOFFOLI(A, B, Cout))
+    circ.append(cirq.CNOT(A, B))
+    circ.append(cirq.TOFFOLI(B, Cin, Cout))
+    circ.append(cirq.CNOT(Cin, B))
+
+def copy_register(circ, A, B):
+    """
+    XOR the contents of A into B (thus copying them if B is empty)
+
+    inputs:   A  B
+    outputs:  A  A xor B
+    """
+    if len(A) > len(B):
+        raise ValueError("register B must be at least as long as A")
+
+    for a, b in zip(A, B):
+        circ.append(cirq.CNOT(a, b))
