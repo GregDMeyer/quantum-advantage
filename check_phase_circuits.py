@@ -4,6 +4,7 @@ import cirq
 from phase_circuits import x2_mod_N_phase
 from ancilla import AncillaManager
 
+
 def parse_args():
     p = ArgumentParser(description='Check fidelity of phase circuits.')
 
@@ -13,6 +14,7 @@ def parse_args():
     args = p.parse_args()
 
     return args
+
 
 def parse_results(results, N, registers):
     rtn = {}
@@ -37,6 +39,7 @@ def parse_results(results, N, registers):
 
     return rtn
 
+
 def idx_to_vals(idx, registers):
     rtn = []
     for reg in registers:
@@ -45,12 +48,14 @@ def idx_to_vals(idx, registers):
         idx >>= len(reg)
     return rtn
 
+
 def check_a(results, N):
     good = 0
     for (y, x), prob in results.items():
         if abs(y - (x**2 % N)) < 1:
             good += prob
     return good
+
 
 def main():
     args = parse_args()
@@ -62,8 +67,7 @@ def main():
     ancillas = AncillaManager()
 
     simulator = cirq.Simulator()
-    circuit = cirq.Circuit()
-    x2_mod_N_phase(circuit, N, x, y, ancillas, args.t)
+    circuit = cirq.Circuit(x2_mod_N_phase(N, x, y, ancillas, args.t))
 
     registers = x, y, ancillas.all()
     result = simulator.simulate(circuit, qubit_order=[q for r in registers for q in r][::-1])
@@ -72,6 +76,7 @@ def main():
     good_frac = check_a(parsed, N)
 
     print(f'success prob.: {good_frac:0.3f}')
+
 
 if __name__ == '__main__':
     main()

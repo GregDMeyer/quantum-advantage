@@ -10,6 +10,7 @@ from ancilla import AncillaManager
 
 from matplotlib import pyplot as plt
 
+
 def parse_args():
     p = ArgumentParser(description='Count gates for x^2 mod N circuits.')
     p.add_argument('ns', type=lambda lst: [int(x) for x in lst.split(',')],
@@ -28,6 +29,7 @@ def parse_args():
             raise ValueError(f"unrecognized method '{m}'")
 
     return args
+
 
 def describe(c):
 
@@ -51,6 +53,7 @@ def describe(c):
 
     return (tot_gates, t_gates, depth)
 
+
 def plot(ns, ydata, yname):
     for impl, vals in ydata.items():
         plt.plot(ns, vals, label=impl)
@@ -65,6 +68,7 @@ def plot(ns, ydata, yname):
 
     plt.tight_layout()
     plt.show()
+
 
 def main():
     args = parse_args()
@@ -84,49 +88,52 @@ def main():
         header.append('depth')
     print(','.join(header))
 
-    ydata = {impl:[] for impl in digital_impls+phase_impls}
+    ydata = {impl: [] for impl in digital_impls+phase_impls}
     for n in args.ns:
         # for a fair comparison across implementations
         N = randint(0, 2**n-1) | 1 | (1<<(n-1))
 
         for impl in args.methods:
 
-            c = cirq.Circuit()
-
-            # adjust the default insertstrategy
-            # this is kind of dumb, but alas
+            # NEW is a lot faster, if we're not using the depth
             if args.d:
-                c.append = lambda arg: cirq.Circuit.append(c, arg, cirq.InsertStrategy.EARLIEST)
+                strategy = cirq.InsertStrategy.EARLIEST
             else:
-                c.append = lambda arg: cirq.Circuit.append(c, arg, cirq.InsertStrategy.NEW)
+                strategy = cirq.InsertStrategy.NEW
 
             x_reg = cirq.NamedQubit.range(n, prefix="x")
             ancillas = AncillaManager()
 
             if impl in digital_impls:
                 y_reg = cirq.NamedQubit.range(2*n+1, prefix="y")
-                x2_mod_N(c, N, x_reg, y_reg, ancillas, impl)
+                R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, impl)
+                c = cirq.Circuit(circ_gen,
+                                 strategy=strategy)
 
             elif impl in phase_impls:
                 y_reg = cirq.NamedQubit.range(n+3, prefix="y")
-                x2_mod_N_phase(c, N, x_reg, y_reg, ancillas, impl)
+                c = cirq.Circuit(x2_mod_N_phase(N, x_reg, y_reg, ancillas, impl),
+                                 strategy=strategy)
 
             else:
                 raise ValueError("unknown implementation")
 
             if not ancillas.all_discarded():
-                print(f"qubit memory leak! {ancillas.n_active} ancillas not discarded", file=stderr)
+                print(f"qubit memory leak! {ancillas.n_active} "
+                      "ancillas not discarded", file=stderr)
 
             gates, t_gates, depth = describe(c)
             qubits = len(x_reg) + len(y_reg) + ancillas.max_ancilla_usage()
-            print(f"{impl}, {n}, {gates}, {t_gates}, {qubits}" + (f", {depth}" if args.d else ""))
+            print(f"{impl}, {n}, {gates}, {t_gates}, {qubits}"
+                  + (f", {depth}" if args.d else ""))
 
             if args.p != 'off':
-                ydata[impl].append({'gates':gates,
-                                    'depth':depth}[args.p])
+                ydata[impl].append({'gates': gates,
+                                    'depth': depth}[args.p])
 
     if args.p != 'off':
         plot(args.ns, ydata, args.p)
+
 
 if __name__ == '__main__':
     main()
