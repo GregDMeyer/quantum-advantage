@@ -44,6 +44,10 @@ def describe(c):
     for m in c:
         has_tof = False
         for op in m:
+            if isinstance(op, int):
+                tot_gates += op
+                continue
+
             if op.gate is cirq.TOFFOLI:
                 tot_gates += 15
                 t_gates += 7
@@ -79,11 +83,31 @@ def fast_flatten(root):
     '''
     flatten an op-tree
     '''
-    if isinstance(root, cirq.Operation):
+    if isinstance(root, (int, cirq.Operation)):
         yield root
     else:
         for subtree in root:
             yield from fast_flatten(subtree)
+
+
+def shim_gates():
+    '''
+    This function causes circuit building to directly yield gate counts
+    instead of actually constructing gate objects. This yields much better
+    performance when only the gate counts are desired (the circuit does not
+    actually need to be constructed).
+    '''
+    gate_gens = [
+        'ZPowGate',
+        'CZPowGate',
+        'CCZPowGate'
+    ]
+
+    def fake_gate_gen(*args, **kwargs):
+        return lambda *qubits: 1
+
+    for gate_name in gate_gens:
+        setattr(cirq, gate_name, fake_gate_gen)
 
 
 def main():
@@ -131,6 +155,7 @@ def main():
             if args.d:
                 c = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.EARLIEST)
             else:
+                shim_gates()
                 c = fast_flatten(circ_gen)
 
             if not ancillas.all_discarded():

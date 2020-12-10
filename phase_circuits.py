@@ -104,12 +104,13 @@ def x2_mod_N_phase(N, x, y, ancillas, circuit_type):
 def CZpow(phase, *qubits):
     nqubits = len(qubits)
 
-    if nqubits == 1:
-        base_gate = cirq.ZPowGate(exponent=phase)
+    # we put most common case first
+    if nqubits == 3:
+        base_gate = cirq.CCZPowGate(exponent=phase)
     elif nqubits == 2:
         base_gate = cirq.CZPowGate(exponent=phase)
-    elif nqubits == 3:
-        base_gate = cirq.CCZPowGate(exponent=phase)
+    elif nqubits == 1:
+        base_gate = cirq.ZPowGate(exponent=phase)
     else:
         raise ValueError('too many control qubits')
 
