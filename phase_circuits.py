@@ -59,7 +59,7 @@ def count(x, counter, pairs, sign):
 def phase_add(in_phase, target, controls):
     for k, yk in enumerate(target):
         phase = 2**(len(target) - k - 1) * in_phase % 2
-        yield (cirq.ZPowGate(exponent=phase)(yk)).controlled_by(*controls)
+        yield CZpow(phase, yk, *controls)
 
 
 def iqft(reg):
@@ -67,14 +67,14 @@ def iqft(reg):
         yield cirq.H(yk)
         for m, ym in list(enumerate(reg))[k+1:]:
             phase = -(1/2**(m-k))
-            yield cirq.CZPowGate(exponent=phase)(ym, yk)
+            yield CZpow(phase, ym, yk)
 
 
 def qft(reg):
     for k, yk in list(enumerate(reg))[::-1]:
         for m, ym in list(enumerate(reg))[k+1:]:
             phase = 1/2**(m-k)
-            yield cirq.CZPowGate(exponent=phase)(ym, yk)
+            yield CZpow(phase, ym, yk)
         yield cirq.H(yk)
 
 
@@ -95,7 +95,22 @@ def x2_mod_N_phase(N, x, y, ancillas, circuit_type):
             yield cirq.H(yk)
             for m, ym in list(enumerate(y))[k+1:]:
                 phase = -(1/2**(m-k))
-                yield cirq.CZPowGate(exponent=phase)(ym, yk)
+                yield CZpow(phase, ym, yk)
 
     else:
         raise ValueError('unknown circuit type')
+
+
+def CZpow(phase, *qubits):
+    nqubits = len(qubits)
+
+    if nqubits == 1:
+        base_gate = cirq.ZPowGate(exponent=phase)
+    elif nqubits == 2:
+        base_gate = cirq.CZPowGate(exponent=phase)
+    elif nqubits == 3:
+        base_gate = cirq.CCZPowGate(exponent=phase)
+    else:
+        raise ValueError('too many control qubits')
+
+    return base_gate(*qubits)
