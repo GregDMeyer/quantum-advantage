@@ -33,6 +33,11 @@ def parse_args():
 
 def describe(c):
 
+    if not isinstance(c, cirq.Circuit):
+        # add one layer of iteration---we are pretending
+        # it is one giant moment
+        c = (c,)
+
     depth = 0
     tot_gates = 0
     t_gates = 0
@@ -70,6 +75,17 @@ def plot(ns, ydata, yname):
     plt.show()
 
 
+def fast_flatten(root):
+    '''
+    flatten an op-tree
+    '''
+    if isinstance(root, cirq.Operation):
+        yield root
+    else:
+        for subtree in root:
+            yield from fast_flatten(subtree)
+
+
 def main():
     args = parse_args()
 
@@ -95,28 +111,27 @@ def main():
 
         for impl in args.methods:
 
-            # NEW is a lot faster, if we're not using the depth
-            if args.d:
-                strategy = cirq.InsertStrategy.EARLIEST
-            else:
-                strategy = cirq.InsertStrategy.NEW
-
             x_reg = cirq.NamedQubit.range(n, prefix="x")
             ancillas = AncillaManager()
 
             if impl in digital_impls:
                 y_reg = cirq.NamedQubit.range(2*n+1, prefix="y")
                 R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, impl)
-                c = cirq.Circuit(circ_gen,
-                                 strategy=strategy)
 
             elif impl in phase_impls:
                 y_reg = cirq.NamedQubit.range(n+3, prefix="y")
-                c = cirq.Circuit(x2_mod_N_phase(N, x_reg, y_reg, ancillas, impl),
-                                 strategy=strategy)
+                circ_gen = x2_mod_N_phase(N, x_reg, y_reg, ancillas, impl)
 
             else:
                 raise ValueError("unknown implementation")
+
+            # only actually build the circuit if we need the machinery
+            # to parallelize gates. otherwise we can just iterate through the
+            # generator.
+            if args.d:
+                c = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.EARLIEST)
+            else:
+                c = fast_flatten(circ_gen)
 
             if not ancillas.all_discarded():
                 print(f"qubit memory leak! {ancillas.n_active} "
