@@ -13,7 +13,7 @@ from digital_circuits import extended_gcd, montgomery_reduce, x2_mod_N
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
-# TODO: set InsertStrategy to NEW everywhere for speed
+NEW = cirq.InsertStrategy.NEW
 
 class TestX2modN(unittest.TestCase):
 
@@ -38,7 +38,7 @@ class TestX2modN(unittest.TestCase):
 
                     ancillas = AncillaManager()
                     R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, method)
-                    circ = cirq.Circuit(circ_gen)
+                    circ = cirq.Circuit(circ_gen, strategy=NEW)
                     sim = ToffoliSimulator(circ)
 
                     for _ in range(self.iters):
@@ -61,7 +61,7 @@ class TestSubCircuits(unittest.TestCase):
 
     def test_half_adder(self):
         qubits = cirq.LineQubit.range(3)
-        c = cirq.Circuit(half_adder(*qubits))
+        c = cirq.Circuit(half_adder(*qubits), strategy=NEW)
         sim = ToffoliSimulator(c)
 
         for a, b in product((0, 1), repeat=2):
@@ -76,7 +76,7 @@ class TestSubCircuits(unittest.TestCase):
 
     def test_full_adder(self):
         qubits = cirq.LineQubit.range(4)
-        c = cirq.Circuit(full_adder(*qubits))
+        c = cirq.Circuit(full_adder(*qubits), strategy=NEW)
         sim = ToffoliSimulator(c)
 
         for a, b, cin in product((0, 1), repeat=3):
@@ -119,7 +119,7 @@ class TestArithmetic(unittest.TestCase):
                 b_reg = cirq.NamedQubit.range(m, prefix="b")
                 ancillas = AncillaManager()
 
-                c = cirq.Circuit(add_int(a_reg, b_reg, ancillas))
+                c = cirq.Circuit(add_int(a_reg, b_reg, ancillas), strategy=NEW)
                 sim = ToffoliSimulator(c)
 
                 state = int_to_state(a, a_reg)
@@ -139,7 +139,7 @@ class TestArithmetic(unittest.TestCase):
                 b_reg = cirq.NamedQubit.range(m, prefix="b")
                 ancillas = AncillaManager()
 
-                c = cirq.Circuit(add_classical_int(a, b_reg, ancillas))
+                c = cirq.Circuit(add_classical_int(a, b_reg, ancillas), strategy=NEW)
                 sim = ToffoliSimulator(c)
 
                 state = int_to_state(b, b_reg)
@@ -154,7 +154,7 @@ class TestArithmetic(unittest.TestCase):
         b_reg = cirq.NamedQubit.range(6, prefix="b")
         ancillas = AncillaManager()
 
-        c = cirq.Circuit(add_int(a_reg, b_reg, ancillas))
+        c = cirq.Circuit(add_int(a_reg, b_reg, ancillas), strategy=NEW)
 
         with self.assertRaises(ValueError):
             next(add_int(b_reg, a_reg, ancillas))
@@ -170,7 +170,7 @@ class TestArithmetic(unittest.TestCase):
                 ancillas = AncillaManager()
                 result = ancillas.new()
 
-                c = cirq.Circuit(lessthan_classical(b_reg, a, result, ancillas))
+                c = cirq.Circuit(lessthan_classical(b_reg, a, result, ancillas), strategy=NEW)
                 sim = ToffoliSimulator(c)
 
                 state = int_to_state(b, b_reg)
@@ -203,7 +203,7 @@ class TestArithmetic(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     next(square(a_reg, a_reg, ancillas))
 
-                c = cirq.Circuit(square(a_reg, b_reg, ancillas))
+                c = cirq.Circuit(square(a_reg, b_reg, ancillas), strategy=NEW)
                 sim = ToffoliSimulator(c)
 
                 for a in a_test_cases:
@@ -237,10 +237,10 @@ class TestArithmetic(unittest.TestCase):
                 c_reg = cirq.NamedQubit.range(m+n, prefix="c")
                 ancillas = AncillaManager()
 
-                circ1 = cirq.Circuit(mult(a_reg, b_reg, c_reg, ancillas))
+                circ1 = cirq.Circuit(mult(a_reg, b_reg, c_reg, ancillas), strategy=NEW)
                 sim1 = ToffoliSimulator(circ1)
 
-                circ2 = cirq.Circuit(mult(b_reg, a_reg, c_reg, ancillas))
+                circ2 = cirq.Circuit(mult(b_reg, a_reg, c_reg, ancillas), strategy=NEW)
                 sim2 = ToffoliSimulator(circ2)
 
                 for a, b in test_cases:
@@ -278,7 +278,7 @@ class TestArithmetic(unittest.TestCase):
                     c_reg = cirq.NamedQubit.range(2*n, prefix="c")
                     ancillas = AncillaManager()
 
-                    circ = cirq.Circuit(mult(a, b_reg, c_reg, ancillas))
+                    circ = cirq.Circuit(mult(a, b_reg, c_reg, ancillas), strategy=NEW)
                     sim = ToffoliSimulator(circ)
 
                     for b,c in product(b_test_cases, (0, int(0.8122297*2**(2*n)), 2**(2*n)-1)):
@@ -310,7 +310,7 @@ class TestArithmeticLarge(unittest.TestCase):
             b_reg = cirq.NamedQubit.range(m, prefix="b")
             ancillas = AncillaManager()
 
-            c = cirq.Circuit(add_int(a_reg, b_reg, ancillas))
+            c = cirq.Circuit(add_int(a_reg, b_reg, ancillas), strategy=NEW)
             sim = ToffoliSimulator(c)
 
             for _ in range(self.iterations):
@@ -337,7 +337,7 @@ class TestArithmeticLarge(unittest.TestCase):
                     b_reg = cirq.NamedQubit.range(m, prefix="b")
                     ancillas = AncillaManager()
 
-                    c = cirq.Circuit(add_classical_int(a, b_reg, ancillas))
+                    c = cirq.Circuit(add_classical_int(a, b_reg, ancillas), strategy=NEW)
                     sim = ToffoliSimulator(c)
 
                     state = int_to_state(b, b_reg)
@@ -362,7 +362,7 @@ class TestArithmeticLarge(unittest.TestCase):
                     b_reg = cirq.NamedQubit.range(2*n, prefix="b")
                     ancillas = AncillaManager()
 
-                    c = cirq.Circuit(square(a_reg, b_reg, ancillas))
+                    c = cirq.Circuit(square(a_reg, b_reg, ancillas), strategy=NEW)
                     sim = ToffoliSimulator(c)
 
                     for _ in range(self.iterations):
@@ -395,7 +395,7 @@ class TestArithmeticLarge(unittest.TestCase):
                     c_reg = cirq.NamedQubit.range(m+n, prefix="c")
                     ancillas = AncillaManager()
 
-                    circ = cirq.Circuit(mult(a_reg, b_reg, c_reg, ancillas))
+                    circ = cirq.Circuit(mult(a_reg, b_reg, c_reg, ancillas), strategy=NEW)
                     sim = ToffoliSimulator(circ)
 
                     for _ in range(self.iterations):
@@ -510,7 +510,7 @@ class TestMontgomery(unittest.TestCase):
                     ancillas = AncillaManager()
 
                     R, circ_gen = montgomery_reduce(T_reg, ancillas, N, mult=mult)
-                    circ = cirq.Circuit(circ_gen)
+                    circ = cirq.Circuit(circ_gen, strategy=NEW)
                     sim = ToffoliSimulator(circ)
 
                     state = int_to_state(T, T_reg)
