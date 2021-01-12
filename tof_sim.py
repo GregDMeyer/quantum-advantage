@@ -3,11 +3,11 @@ import cirq
 
 class ToffoliSimulator:
 
-    allowed_gates = [
+    allowed_gates = {
         cirq.TOFFOLI,
         cirq.CNOT,
         cirq.X
-    ]
+    }
 
     def __init__(self, c, qubits=None):
         self.circuit = c
@@ -18,7 +18,7 @@ class ToffoliSimulator:
 
         self.phase = 1
 
-    def simulate(self, state):
+    def simulate(self, state, check=True):
         """
         Simulate the circuit, returning the result as an integer
 
@@ -31,7 +31,7 @@ class ToffoliSimulator:
         """
         for moment in self.circuit:
             for op in moment:
-                if not any(op.gate == g for g in self.allowed_gates):
+                if check and op.gate not in self.allowed_gates:
                     raise ValueError(f"unsupported gate type '{op.gate}'")
 
                 if all(state[q] for q in op.qubits[:-1]):
