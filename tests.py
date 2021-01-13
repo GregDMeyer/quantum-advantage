@@ -5,11 +5,13 @@ from itertools import product, combinations_with_replacement
 import random
 import cirq
 
-from digital_circuits import full_adder, half_adder, add_int, add_classical_int, lessthan_classical
+from digital_circuits import full_adder, half_adder, add_int
+from digital_circuits import times_three, add_classical_int, lessthan_classical
 from digital_circuits import schoolbook_square, karatsuba_square
 from digital_circuits import schoolbook_mult, karatsuba_mult
 from digital_circuits import schoolbook_classical_mult, karatsuba_classical_mult
-from digital_circuits import extended_gcd, montgomery_reduce, x2_mod_N
+from digital_circuits import extended_gcd, montgomery_reduce
+from digital_circuits import x2_mod_N, get_registers
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
@@ -17,7 +19,8 @@ NEW = cirq.InsertStrategy.NEW
 
 class TestX2modN(unittest.TestCase):
 
-    ns = [8, 16, 50]
+    ns = [4, 8, 16, 50]
+    threes = [0, 1, 2, 5]
     iters = 8
     methods = ['karatsuba', 'schoolbook']
 
@@ -26,35 +29,39 @@ class TestX2modN(unittest.TestCase):
 
     def test_x2modN(self):
         for n in self.ns:
-            x_reg = cirq.NamedQubit.range(n, prefix="x")
-            y_reg = cirq.NamedQubit.range(2*n+1, prefix="y")
-            for _, method in product(range(self.iters), self.methods):
+            for three in self.threes:
+                factor = 3**three
+                x_reg, y_reg = get_registers(n, factor)
+                for _, method in product(range(self.iters), self.methods):
 
-                N = random.randint(0, 2**n-1)  # we will have N = pq, but this is fine for testing
-                N |= 1           # N must be odd
-                N |= 1 << (n-1)  # N must be of length n
+                    N = random.randint(0, 2**n-1)  # we will have N = pq, but this is fine for testing
+                    N |= 1           # N must be odd
+                    N |= 1 << (n-1)  # N must be of length n
 
-                with self.subTest(N=N, method=method):
+                    with self.subTest(N=N, method=method, three=three):
 
-                    ancillas = AncillaManager()
-                    R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, method)
-                    circ = cirq.Circuit(circ_gen, strategy=NEW)
-                    sim = ToffoliSimulator(circ)
+                        ancillas = AncillaManager()
+                        # TODO: could shave off a bit of y register for the multiplication?
+                        R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, method, threes=three)
+                        circ = cirq.Circuit(circ_gen, strategy=NEW)
+                        sim = ToffoliSimulator(circ)
 
-                    for _ in range(self.iters):
-                        x = random.randint(0, N-1)
-                        with self.subTest(x=x):
-                            state = int_to_state(x, x_reg)
-                            state.update(int_to_state(0, y_reg))
-                            state.update(ancillas.init_state())
-                            sim.simulate(state)
-                            rx = state_to_int(state, x_reg)
-                            ry = state_to_int(state, y_reg[n:]) # result is top bits of y register
+                        for _ in range(self.iters):
+                            x = random.randint(0, N-1)
+                            with self.subTest(x=x):
+                                state = int_to_state(x, x_reg)
+                                state.update(int_to_state(0, y_reg))
+                                state.update(ancillas.init_state())
+                                sim.simulate(state)
+                                rx = state_to_int(state, x_reg)
+                                ry = state_to_int(state, y_reg[R.bit_length()-1:]) # result is top bits of y register
 
-                            self.assertEqual(rx, x)
+                                self.assertEqual(rx, factor*x)
 
-                            self.assertLess(ry, N)
-                            self.assertEqual((R*ry)%N, (x**2)%N)
+                                self.assertLess(ry, factor**2 * N)
+                                self.assertEqual((R*ry) % (factor**2), 0)
+                                true_y = (R*ry // factor**2) % N
+                                self.assertEqual(true_y, x**2 % N)
 
 
 class TestSubCircuits(unittest.TestCase):
@@ -294,6 +301,25 @@ class TestArithmetic(unittest.TestCase):
 
                             self.assertEqual(rb, b)
                             self.assertEqual(rc, (c+a*b)%(2**(2*n)))
+
+    def test_times_three(self):
+        n = 5
+        test_cases = range(2**n)
+
+        a_reg = cirq.NamedQubit.range(n+2, prefix="a")
+        ancillas = AncillaManager()
+
+        c = cirq.Circuit(times_three(a_reg, ancillas), strategy=NEW)
+        sim = ToffoliSimulator(c)
+
+        for a in test_cases:
+            with self.subTest(a=a):
+                state = int_to_state(a, a_reg)
+                state.update(ancillas.init_state())
+                sim.simulate(state)
+                ra = state_to_int(state, a_reg)
+
+                self.assertEqual(ra, 3*a)
 
 
 class TestArithmeticLarge(unittest.TestCase):

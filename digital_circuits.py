@@ -1,23 +1,43 @@
 
+from itertools import repeat
 import cirq
 
 
-def x2_mod_N(N, x, y, ancillas, mult_type):
+def x2_mod_N(N, x, y, ancillas, mult_type, threes=0):
+
+    factor = 3**threes
+
+    # make sure we have enough room
+    xmax = factor * N
+    x_len = xmax.bit_length()  # could be -1?
+    y_len = (2*xmax + 1).bit_length()
+    if len(x) < x_len or len(y) < y_len:
+        raise ValueError('registers not large enough')
+
+    three_gen = (times_three(x, ancillas) for _ in range(threes))
 
     if mult_type == "karatsuba":
         mult_gen = karatsuba_square(x, y, ancillas, C_zero=True)
-        R, reduce_gen = montgomery_reduce(y, ancillas, N,
+        R, reduce_gen = montgomery_reduce(y, ancillas, factor**2 * N,
                                           mult=karatsuba_classical_mult)
 
     elif mult_type == "schoolbook":
         mult_gen = schoolbook_square(x, y, ancillas, C_zero=True)
-        R, reduce_gen = montgomery_reduce(y, ancillas, N,
+        R, reduce_gen = montgomery_reduce(y, ancillas, factor**2 * N,
                                           mult=schoolbook_classical_mult)
 
     else:
         raise ValueError(f"unknown mult type '{mult_type}'")
 
-    return R, (mult_gen, reduce_gen)
+    return R, (three_gen, mult_gen, reduce_gen)
+
+
+# TODO: can we trim these a bit? I think so.
+def get_registers(n, factor):
+    extra_bits = factor.bit_length()
+    x_reg = cirq.NamedQubit.range(n+extra_bits, prefix="x")
+    y_reg = cirq.NamedQubit.range(2*(n+2*extra_bits)+1, prefix="y")
+    return x_reg, y_reg
 
 
 def add_int(A, B, ancillas, allow_overflow=False):
@@ -51,6 +71,34 @@ def add_int(A, B, ancillas, allow_overflow=False):
         cin = cout
 
     ancillas.discard(cin)
+
+
+def times_three(A, ancillas):
+    """
+    multiply the value in register A by 3, in-place
+    """
+    # can't really check for appropriate register size
+    # user just needs to make sure that A is big enough
+    # (should have room for two extra bits)
+
+    cin = None
+    prev = None
+    for a in A[:-1]:
+        cout = ancillas.new()
+        new_prev = ancillas.new()
+        yield cirq.CNOT(a, new_prev)
+        if cin is not None:
+            yield full_adder(prev, a, cin, cout)
+            ancillas.discard(cin)
+            ancillas.discard(prev)
+        prev = new_prev
+        cin = cout
+
+    # carry to the end---either prev or cin may be 1, but not both
+    yield cirq.CNOT(cin, A[-1])
+    yield cirq.CNOT(prev, A[-1])
+    ancillas.discard(cin)
+    ancillas.discard(prev)
 
 
 def add_classical_int(x, A, ancillas, control=None):

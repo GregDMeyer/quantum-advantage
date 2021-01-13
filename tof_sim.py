@@ -34,8 +34,8 @@ class ToffoliSimulator:
                 if check and op.gate not in self.allowed_gates:
                     raise ValueError(f"unsupported gate type '{op.gate}'")
 
-                if all(state[q] for q in op.qubits[:-1]):
-                    state[op.qubits[-1]] ^= 1
+                if all(state[q.name] for q in op.qubits[:-1]):
+                    state[op.qubits[-1].name] ^= 1
 
         return state
 
@@ -45,7 +45,7 @@ def int_to_state(x, reg):
         raise ValueError("integer too large for register")
 
     rtn = {
-        q : (x>>i)&1 for i,q in enumerate(reg)
+        q.name : (x>>i)&1 for i,q in enumerate(reg)
     }
 
     return rtn
@@ -54,5 +54,5 @@ def state_to_int(state, reg):
     rtn = 0
     for q in reg[::-1]:
         rtn <<= 1
-        rtn |= state[q]
+        rtn |= state[q.name]
     return rtn

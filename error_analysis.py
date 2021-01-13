@@ -4,12 +4,14 @@ import argparse
 import cirq
 from sympy.ntheory.generate import randprime
 from sympy.ntheory.residue_ntheory import legendre_symbol
+import progressbar
 
-from digital_circuits import x2_mod_N
+from digital_circuits import x2_mod_N, get_registers
 from main import fast_flatten
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
+# TODO: add phase errors
 
 def error_circuit(circuit, error_rate):
     '''
@@ -25,48 +27,69 @@ def error_circuit(circuit, error_rate):
         yield op
 
 
-def test_circuit(circuit, regs, error_rate, iters, p, q, R):
+def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
     gates = list(fast_flatten(circuit))
     x_reg, y_reg = regs
     N = p*q
 
     wrong_fail = 0
     wrong_pass = 0
-    for _ in range(iters):
-        c = error_circuit(gates, error_rate)
-        sim = ToffoliSimulator([c], qubits=circuit.all_qubits())
 
-        x = 0
-        # gcd(x, N) should be 1
-        while x%p == 0 or x%q == 0:
-            x = randrange(N//2)
+    widgets = [
+        'Error simulation: ', progressbar.Percentage(),
+        ' ', progressbar.Bar(),#marker=progressbar.RotatingMarker()),
+        ' ', progressbar.ETA(),
+    ]
+    bar = progressbar.ProgressBar(widgets=widgets, max_value=iters).start()
 
-        state = int_to_state(0, circuit.all_qubits())
-        state.update(int_to_state(x, x_reg))
-        sim.simulate(state, check=False)
-        result = state_to_int(state, y_reg[len(x_reg):])
+    all_qubits = circuit.all_qubits()
 
-        y = result*R % N
-        correct = y == x**2 % N
-        fail = not valid_y(y, p, q)
-        if correct:
-            if fail:
-                print('warning: correct answer failed check!')
-        else:
-            if fail:
-                wrong_fail += 1
+    try:
+        for i in range(iters):
+            c = error_circuit(gates, error_rate)
+            sim = ToffoliSimulator([c], qubits=all_qubits)
+
+            x = 0
+            # gcd(x, N) should be 1
+            while x%p == 0 or x%q == 0:
+                x = randrange(N//2)
+
+            state = int_to_state(0, all_qubits)
+            state.update(int_to_state(x, x_reg))
+            sim.simulate(state, check=False)
+            result = state_to_int(state, y_reg[R.bit_length()-1:])
+
+            factor_N = factor**2 * N
+            y = result*R % factor_N
+            correct = y == (factor*x)**2 % factor_N
+            fail = not valid_y(y, p, q, factor)
+            if correct:
+                if fail:
+                    print('warning: correct answer failed check!')
             else:
-                wrong_pass += 1
+                if fail:
+                    wrong_fail += 1
+                else:
+                    wrong_pass += 1
+
+            bar.update(i+1)
+
+    except KeyboardInterrupt as e:
+        iters = i-1
+
+    bar.finish()
 
     right = iters - wrong_fail - wrong_pass
-    return wrong_fail, wrong_pass, right
+    return iters, wrong_fail, wrong_pass, right
 
 
-def valid_y(y, p, q):
+def valid_y(y, p, q, factor):
     # it is a quadratic residue mod N if it is one mod both p and q
-    if not legendre_symbol(y, p) == 1:
+    if not all(legendre_symbol(y//factor**2, f) == 1 for f in (p, q)):
         return False
-    if not legendre_symbol(y, q) == 1:
+
+    # it must be divisible by factor**2
+    if not y % factor**2 == 0:
         return False
 
     return True
@@ -101,6 +124,7 @@ def parse_args():
     parser.add_argument('-n', type=int, required=True, help='number of bits of N')
     parser.add_argument('-f', type=float, required=True, help='circuit fidelity')
     parser.add_argument('--iters', type=int, default=1000, help='number of iterations')
+    parser.add_argument('-m', type=int, default=0, help='number of factors of 3 to include')
 
     return parser.parse_args()
 
@@ -111,28 +135,41 @@ def main():
     p, q = choose_primes(args.n)
     N = p*q
 
-    x_reg = cirq.NamedQubit.range(args.n, prefix="x")
-    y_reg = cirq.NamedQubit.range(2*args.n+1, prefix="y")
-
+    x_reg, y_reg = get_registers(args.n, 1)
     ancillas = AncillaManager()
     R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba')
-
     circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
-
     error_rate = get_error_rate(circuit, args.f)
 
-    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R)
-    wrong_fail, wrong_pass, right = results
+    orig_circuit = circuit
 
-    count_width = len(str(args.iters))
-    print(f'iterations:        {args.iters}')
-    print(f'correct:           {str(right).rjust(count_width)} ({right/args.iters:0.04f})')
-    print(f'wrong, rejected:   {str(wrong_fail).rjust(count_width)} ({wrong_fail/args.iters:0.04f})')
-    print(f'wrong, accepted:   {str(wrong_pass).rjust(count_width)} ({wrong_pass/args.iters:0.04f})')
+    # we want the error rate of the original circuit, but to run on the multiplied one
+    factor = 3**args.m
+
+    if factor > 1:
+        x_reg, y_reg = get_registers(args.n, factor)
+        ancillas = AncillaManager()
+        R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba', threes=args.m)
+        circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
+
+    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, factor)
+    iters, wrong_fail, wrong_pass, right = results
+
+    count_width = len(str(iters))
+    print(f'iterations:        {iters}')
+    print(f'correct:           {str(right).rjust(count_width)} ({right/iters:0.04f})')
+    print(f'wrong, rejected:   {str(wrong_fail).rjust(count_width)} ({wrong_fail/iters:0.04f})')
+    print(f'wrong, accepted:   {str(wrong_pass).rjust(count_width)} ({wrong_pass/iters:0.04f})')
     print()
-    print(f'Succ. without postselection: {right/args.iters:0.02f}')
+    print(f'Succ. without postselection: {right/iters:0.02f}')
     print(f'Succ. with postselection:    {right/(right+wrong_pass):0.02f}')
-    print(f'Runtime factor:              {args.iters/(right+wrong_pass):.02f}')
+    print()
+
+    fact_iters = iters/(right+wrong_pass)
+    fact_circ = len(circuit)/len(orig_circuit)
+    print(f'Runtime factor (iters):      {fact_iters:.02f}')
+    print(f'Runtime factor (circuit):    {fact_circ:.02f}')
+    print(f'Runtime factor (total):      {fact_iters*fact_circ:.02f}')
 
 if __name__ == '__main__':
     main()
