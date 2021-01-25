@@ -2,7 +2,7 @@
 from random import random, randrange, choice, seed
 import argparse
 from copy import deepcopy
-from math import cos, pi
+from math import cos, pi, atan
 import cirq
 from sympy.ntheory.generate import randprime
 from sympy.ntheory.residue_ntheory import legendre_symbol
@@ -52,7 +52,8 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
     post_data = {
         'total' : 0,
         'good_x': 0,
-        'good_m': 0
+        'good_mz': 0,
+        'good_mx': 0,
     }
 
     all_data = deepcopy(post_data)
@@ -108,9 +109,9 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
                     d['total'] += 1
                     if correct:
                         d['good_x'] += 1     # every x case
-                        d['good_m'] += 0.5   # Z polarized
+                        d['good_mz'] += 1   # Z polarized
                     else:
-                        d['good_m'] += 0.25  # Z polarized and lucky
+                        d['good_mz'] += 0.5  # Z polarized and lucky
 
             # finally, handle the case of m branch, X polarized
 
@@ -119,9 +120,9 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
             if n_correct == 2:
                 # either neither flipped, or they both did!
                 if combined_phase == 1:
-                    all_data['good_m'] += 1
+                    all_data['good_mx'] += 2
                     if n_pass == 2:
-                        post_data['good_m'] += 1
+                        post_data['good_mx'] += 2
 
             # otherwise, at least one y or x was wrong. in this case we will
             # never get a correct superposition, and the single-qubit state
@@ -131,22 +132,54 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
             # also putting a dent into the probability is the fact that if you
             # don't provide a valid y you auto-fail.
             else:
-                all_data['good_m'] += n_pass*0.25
-                post_data['good_m'] += n_pass*0.25
+                all_data['good_mx'] += n_pass*0.5
+                post_data['good_mx'] += n_pass*0.5
 
             bar.update(i+1)
 
     except KeyboardInterrupt:
         pass
 
-    # add measurement factor to m ones
-    for d in (all_data, post_data):
-        c = cos(pi/8)**2
-        d['good_m'] = c*d['good_m'] + (1-c)*(d['total'] - d['good_m'])
-
     bar.finish()
 
+    # add measurement factor to the m ones
+    for d in (all_data, post_data):
+        pz = d['good_mz']/d['total']
+        px = d['good_mx']/d['total']
+
+        if d is post_data:
+            print()
+            print(f'Good mz: {pz:0.5f}')
+            print(f'Good mx: {px:0.5f}')
+
+            theta = compute_optimal_theta(
+                pz,
+                px
+            )
+
+            print(f'Optimal theta: {theta/pi:0.5f}*pi')
+
+        else:
+            theta = pi/8
+
+        cz = cos(theta)**2
+        cx = cos(theta-pi/4)**2
+
+        d['good_m'] = cz*pz + (1-cz)*(1-pz) + cx*px + (1-cx)*(1-px)
+        d['good_m'] *= d['total']/2
+
     return all_data, post_data
+
+
+def compute_optimal_theta(pz, px):
+    """
+    compute the optimal measurement angle, given error rates 1-pz and 1-px
+    for Z and X polarized single-qubit states
+    """
+    # this was found by computing pm as a function of pz, px, and theta, and
+    # then optimizing by taking the derivative with respect to theta and
+    # finding a root
+    return 0.5*atan((2*px-1)/(2*pz-1))
 
 
 def valid_y(y, p, q, factor):
