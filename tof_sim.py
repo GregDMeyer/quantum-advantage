@@ -6,7 +6,12 @@ class ToffoliSimulator:
     allowed_gates = {
         cirq.TOFFOLI,
         cirq.CNOT,
-        cirq.X
+        cirq.X,
+    }
+
+    phase_error_gates = {
+        cirq.Y,
+        cirq.Z
     }
 
     def __init__(self, c, qubits=None):
@@ -18,7 +23,7 @@ class ToffoliSimulator:
 
         self.phase = 1
 
-    def simulate(self, state, check=True):
+    def simulate(self, state):
         """
         Simulate the circuit, returning the result as an integer
 
@@ -29,15 +34,26 @@ class ToffoliSimulator:
             A dictionary mapping qubit objects to their initial state. Will
             be modified to contain the result.
         """
+        phase = 1
         for moment in self.circuit:
             for op in moment:
-                if check and op.gate not in self.allowed_gates:
+                if op.gate in self.allowed_gates:
+                    if all(state[q.name] for q in op.qubits[:-1]):
+                        state[op.qubits[-1].name] ^= 1
+
+                elif op.gate in self.phase_error_gates:
+                    if state[op.qubits[0].name] == 1:
+                        phase *= -1
+
+                    # Y also flips the bit
+                    if op.gate is cirq.Y:
+                        state[op.qubits[-1].name] ^= 1
+
+                else:
                     raise ValueError(f"unsupported gate type '{op.gate}'")
 
-                if all(state[q.name] for q in op.qubits[:-1]):
-                    state[op.qubits[-1].name] ^= 1
-
-        return state
+        # don't need to return state; it is modified in-place
+        return phase
 
 
 def int_to_state(x, reg):

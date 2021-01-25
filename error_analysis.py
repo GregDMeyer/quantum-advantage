@@ -1,28 +1,32 @@
 
-from random import random, randrange, choice
+from random import random, randrange, choice, seed
 import argparse
+from copy import deepcopy
+from math import cos, pi
 import cirq
 from sympy.ntheory.generate import randprime
 from sympy.ntheory.residue_ntheory import legendre_symbol
 import progressbar
 
-from digital_circuits import x2_mod_N, get_registers
+from digital_circuits import x2_mod_N, get_registers, extended_gcd
 from main import fast_flatten
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
-# TODO: add phase errors
 
-def error_circuit(circuit, error_rate):
+def error_circuit(circuit, error_rate, rand_seed=None):
     '''
     The circuit, but with bit flip errors added randomly after each gate
     with probability error_rate
     '''
+    seed(a=rand_seed)
+    err_gates = [cirq.X, cirq.Y, cirq.Z]
     for op in circuit:
         # randomly apply X gates to qubits involved with the gate
         if random() < error_rate:
             qubit = choice(op.qubits)
-            yield cirq.X(qubit)
+            gate = choice(err_gates)
+            yield gate(qubit)
 
         yield op
 
@@ -31,9 +35,6 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
     gates = list(fast_flatten(circuit))
     x_reg, y_reg = regs
     N = p*q
-
-    wrong_fail = 0
-    wrong_pass = 0
 
     widgets = [
         'Error simulation: ', progressbar.Percentage(),
@@ -44,43 +45,108 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
 
     all_qubits = circuit.all_qubits()
 
+    # so that we get a different run each time
+    # start off with the system time seed
+    seed_delta = randrange(2**32)
+
+    post_data = {
+        'total' : 0,
+        'good_x': 0,
+        'good_m': 0
+    }
+
+    all_data = deepcopy(post_data)
+
     try:
         for i in range(iters):
-            c = error_circuit(gates, error_rate)
-            sim = ToffoliSimulator([c], qubits=all_qubits)
-
-            x = 0
+            x0 = 0
             # gcd(x, N) should be 1
-            while x%p == 0 or x%q == 0:
-                x = randrange(N//2)
+            while x0%p == 0 or x0%q == 0:
+                x0 = randrange(N//2)
 
-            state = int_to_state(0, all_qubits)
-            state.update(int_to_state(x, x_reg))
-            sim.simulate(state, check=False)
-            result = state_to_int(state, y_reg[R.bit_length()-1:])
+            x1 = compute_collision(x0, p, q)
+            assert x0 != x1 and x0**2 % N == x1**2 % N
 
-            factor_N = factor**2 * N
-            y = result*R % factor_N
-            correct = y == (factor*x)**2 % factor_N
-            fail = not valid_y(y, p, q, factor)
-            if correct:
-                if fail:
-                    print('warning: correct answer failed check!')
+            combined_x = 0
+            combined_y = 0
+            combined_phase = 1
+            n_pass = 0
+            n_correct = 0
+
+            for x in (x0, x1):
+                c = error_circuit(gates, error_rate, rand_seed=i^seed_delta)
+                sim = ToffoliSimulator([c], qubits=all_qubits)
+
+                state = int_to_state(0, all_qubits)
+                state.update(int_to_state(x, x_reg))
+                phase = sim.simulate(state)
+                x_result = state_to_int(state, x_reg)
+                y_result = state_to_int(state, y_reg[R.bit_length()-1:])
+
+                combined_x ^= x_result
+                combined_y ^= y_result
+                combined_phase *= phase
+
+                factor_N = factor**2 * N
+                y = y_result*R % factor_N
+                fail = not valid_y(y, p, q, factor)
+
+                correct = y == (factor*x)**2 % factor_N
+                correct = correct and x_result == factor*x
+
+                data = [all_data]
+                if not fail:
+                    data += [post_data]
+                    n_pass += 1
+
+                if correct:
+                    n_correct += 1
+                    if fail:
+                        print('Warning: rejected correct value!')
+
+                for d in data:
+                    d['total'] += 1
+                    if correct:
+                        d['good_x'] += 1     # every x case
+                        d['good_m'] += 0.5   # Z polarized
+                    else:
+                        d['good_m'] += 0.25  # Z polarized and lucky
+
+            # finally, handle the case of m branch, X polarized
+
+            # first case: both y and x were correct!
+            # only possible error is a phase error
+            if n_correct == 2:
+                # either neither flipped, or they both did!
+                if combined_phase == 1:
+                    all_data['good_m'] += 1
+                    if n_pass == 2:
+                        post_data['good_m'] += 1
+
+            # otherwise, at least one y or x was wrong. in this case we will
+            # never get a correct superposition, and the single-qubit state
+            # will be basically unrelated to what it is supposed to be.
+            # therefore we give it 50% chance that you just happen to get it
+            # right.
+            # also putting a dent into the probability is the fact that if you
+            # don't provide a valid y you auto-fail.
             else:
-                if fail:
-                    wrong_fail += 1
-                else:
-                    wrong_pass += 1
+                all_data['good_m'] += n_pass*0.25
+                post_data['good_m'] += n_pass*0.25
 
             bar.update(i+1)
 
-    except KeyboardInterrupt as e:
-        iters = i-1
+    except KeyboardInterrupt:
+        pass
+
+    # add measurement factor to m ones
+    for d in (all_data, post_data):
+        c = cos(pi/8)**2
+        d['good_m'] = c*d['good_m'] + (1-c)*(d['total'] - d['good_m'])
 
     bar.finish()
 
-    right = iters - wrong_fail - wrong_pass
-    return iters, wrong_fail, wrong_pass, right
+    return all_data, post_data
 
 
 def valid_y(y, p, q, factor):
@@ -93,6 +159,28 @@ def valid_y(y, p, q, factor):
         return False
 
     return True
+
+
+def compute_collision(x0, p, q):
+    mp = pow(x0, (p+1)//2, p)
+    mq = pow(x0, (q+1)//2, q)
+    yp, yq = extended_gcd(p, q)
+    yq = p-yq  # the implementation in digital_circuits inverts it
+
+    N = p*q
+    xp0 = (yp*p*mq + yq*q*mp) % N
+    if xp0 > N//2:
+        xp0 = N-xp0
+
+    if xp0 != x0:
+        return xp0
+
+    # otherwise, it was the other one
+    xp1 = (yp*p*mq - yq*q*mp) % N
+    if xp1 > N//2:
+        xp1 = N-xp1
+
+    return xp1
 
 
 def choose_primes(n):
@@ -153,23 +241,39 @@ def main():
         circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
 
     results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, factor)
-    iters, wrong_fail, wrong_pass, right = results
+    all_data, post_data = results
 
-    count_width = len(str(iters))
-    print(f'iterations:        {iters}')
-    print(f'correct:           {str(right).rjust(count_width)} ({right/iters:0.04f})')
-    print(f'wrong, rejected:   {str(wrong_fail).rjust(count_width)} ({wrong_fail/iters:0.04f})')
-    print(f'wrong, accepted:   {str(wrong_pass).rjust(count_width)} ({wrong_pass/iters:0.04f})')
     print()
-    print(f'Succ. without postselection: {right/iters:0.02f}')
-    print(f'Succ. with postselection:    {right/(right+wrong_pass):0.02f}')
+    print('Results, no post-selection:')
+    print_results(all_data)
     print()
 
-    fact_iters = iters/(right+wrong_pass)
-    fact_circ = len(circuit)/len(orig_circuit)
-    print(f'Runtime factor (iters):      {fact_iters:.02f}')
-    print(f'Runtime factor (circuit):    {fact_circ:.02f}')
-    print(f'Runtime factor (total):      {fact_iters*fact_circ:.02f}')
+    print(f'Results, with post-selection: '
+          f'[{post_data["total"]}/{all_data["total"]} runs]')
+    print_results(post_data)
+    print()
+
+    fact_iters = all_data['total'] / post_data['total']
+    fact_circ = len(circuit) / len(orig_circuit)
+    print(f'Runtime factor (iters):   {fact_iters:.02f}')
+    print(f'Runtime factor (circuit): {fact_circ:.02f}')
+    print(f'Runtime factor (total):   {fact_iters*fact_circ:.02f}')
+
+
+def print_results(data):
+    px = data['good_x'] / data['total']
+    pm = data['good_m'] / data['total']
+    result = px + 4*pm - 4
+
+    print(f' px = {px:0.4f}')
+    print(f' pm = {pm:0.4f}')
+    print(f' px + 4*pm - 4 = {result:0.4f}')
+
+    if result > 0:
+        print('✓ exceeded the classical bound!')
+    else:
+        print('✗ did not exceed classical bound.')
+
 
 if __name__ == '__main__':
     main()
