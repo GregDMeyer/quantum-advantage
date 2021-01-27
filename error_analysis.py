@@ -3,6 +3,8 @@ from random import random, randrange, choice, seed
 import argparse
 from copy import deepcopy
 from math import cos, pi, atan
+from sys import stdout, stderr
+
 import cirq
 from sympy.ntheory.generate import randprime
 from sympy.ntheory.residue_ntheory import legendre_symbol
@@ -41,7 +43,7 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
         ' ', progressbar.Bar(),#marker=progressbar.RotatingMarker()),
         ' ', progressbar.ETA(),
     ]
-    bar = progressbar.ProgressBar(widgets=widgets, max_value=iters).start()
+    bar = progressbar.ProgressBar(widgets=widgets, max_value=iters, fd=stdout).start()
 
     all_qubits = circuit.all_qubits()
 
@@ -253,6 +255,11 @@ def parse_args():
 def main():
     args = parse_args()
 
+    print("Parameters:")
+    print(f"n = {args.n}", file=stderr)
+    print(f"f = {args.f}", file=stderr)
+    print(f"m = {args.m}", file=stderr)
+
     p, q = choose_primes(args.n)
     N = p*q
 
@@ -265,15 +272,13 @@ def main():
     orig_circuit = circuit
 
     # we want the error rate of the original circuit, but to run on the multiplied one
-    factor = 3**args.m
-
-    if factor > 1:
-        x_reg, y_reg = get_registers(args.n, factor)
+    if args.m > 0:
+        x_reg, y_reg = get_registers(args.n, 3**args.m)
         ancillas = AncillaManager()
         R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba', threes=args.m)
         circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
 
-    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, factor)
+    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, 3**args.m)
     all_data, post_data = results
 
     print()
@@ -283,24 +288,31 @@ def main():
 
     print(f'Results, with post-selection: '
           f'[{post_data["total"]}/{all_data["total"]} runs]')
-    print_results(post_data)
+    print_results(post_data, use_stderr=True)
     print()
 
     fact_iters = all_data['total'] / post_data['total']
     fact_circ = len(circuit) / len(orig_circuit)
     print(f'Runtime factor (iters):   {fact_iters:.02f}')
     print(f'Runtime factor (circuit): {fact_circ:.02f}')
-    print(f'Runtime factor (total):   {fact_iters*fact_circ:.02f}')
+    print('Runtime factor (total):   ', end='', flush=True)
+    print(f'{fact_iters*fact_circ:.02f}', file=stderr)
 
 
-def print_results(data):
+def print_results(data, use_stderr=False):
     px = data['good_x'] / data['total']
     pm = data['good_m'] / data['total']
     result = px + 4*pm - 4
 
     print(f' px = {px:0.4f}')
     print(f' pm = {pm:0.4f}')
-    print(f' px + 4*pm - 4 = {result:0.4f}')
+    print(' px + 4*pm - 4 = ', end='', flush=True)
+
+    result_str = f'{result:0.4f}'
+    if use_stderr:
+        print(result_str, file=stderr)
+    else:
+        print(result_str)
 
     if result > 0:
         print('✓ exceeded the classical bound!')
