@@ -4,11 +4,16 @@ from random import randint
 from sys import stderr
 
 import cirq
+from matplotlib import pyplot as plt
+
+# add circuit files to path
+import sys
+from os.path import abspath, dirname, join
+sys.path.append(join(dirname(abspath(__file__)), '../circuits'))
+
 from digital_circuits import x2_mod_N
 from phase_circuits import x2_mod_N_phase
 from ancilla import AncillaManager
-
-from matplotlib import pyplot as plt
 
 
 def parse_args():

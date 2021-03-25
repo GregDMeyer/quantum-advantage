@@ -1,6 +1,12 @@
 
 from argparse import ArgumentParser
 import cirq
+
+# add circuit files to path
+import sys
+from os.path import abspath, dirname, join
+sys.path.append(join(dirname(abspath(__file__)), '../circuits'))
+
 from phase_circuits import x2_mod_N_phase
 from ancilla import AncillaManager
 

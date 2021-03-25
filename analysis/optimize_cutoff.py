@@ -3,7 +3,13 @@ import random
 from sys import argv
 
 import cirq
-from main import describe
+
+# add circuit files to path
+import sys
+from os.path import abspath, dirname, join
+sys.path.append(join(dirname(abspath(__file__)), '../circuits'))
+
+from count_gates import describe
 from ancilla import AncillaManager
 from digital_circuits import karatsuba_mult, schoolbook_mult
 from digital_circuits import karatsuba_square, schoolbook_square

@@ -5,6 +5,11 @@ from itertools import product, combinations_with_replacement
 import random
 import cirq
 
+# add circuit files to path
+import sys
+from os.path import abspath, dirname, join
+sys.path.append(join(dirname(abspath(__file__)), '../circuits'))
+
 from digital_circuits import full_adder, half_adder, add_int
 from digital_circuits import times_three, add_classical_int, lessthan_classical
 from digital_circuits import schoolbook_square, karatsuba_square

@@ -10,8 +10,13 @@ from sympy.ntheory.generate import randprime
 from sympy.ntheory.residue_ntheory import legendre_symbol
 import progressbar
 
+# add circuit files to path
+import sys
+from os.path import abspath, dirname, join
+sys.path.append(join(dirname(abspath(__file__)), '../circuits'))
+
+from count_gates import fast_flatten
 from digital_circuits import x2_mod_N, get_registers, extended_gcd
-from main import fast_flatten
 from tof_sim import ToffoliSimulator, int_to_state, state_to_int
 from ancilla import AncillaManager
 
