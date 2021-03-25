@@ -32,7 +32,6 @@ def x2_mod_N(N, x, y, ancillas, mult_type, threes=0):
     return R, (three_gen, mult_gen, reduce_gen)
 
 
-# TODO: can we trim these a bit? I think so.
 def get_registers(n, factor):
     extra_bits = factor.bit_length()
     x_reg = cirq.NamedQubit.range(n+extra_bits, prefix="x")
@@ -216,9 +215,8 @@ def schoolbook_classical_mult(a, B, C, ancillas,
     if not allow_overflow:
         check_mult_sizes(a, B, C)
 
-    # TODO: should just use add here, instead of reimplementing it?
     for i in range(a.bit_length() if a >= 0 else len(C)):
-        if a&1:
+        if a & 1:
             cin = ancillas.new()
             for j, b in enumerate(B):
                 if i+j >= len(C):
@@ -523,6 +521,8 @@ def montgomery_reduce(T, ancillas, N, mult=None):
     The T register should also have one extra leading qubit that is
     initialized to zero (and is returned as zero).
     """
+    # I think it might be possible to get away with slighly smaller registers,
+    # in the case that we have postselection factor k > 1? not sure though
     if len(T) < 2*N.bit_length() + 1:
         raise ValueError("T too small for montgomery reduction")
 

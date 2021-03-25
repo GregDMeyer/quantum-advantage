@@ -46,7 +46,6 @@ class TestX2modN(unittest.TestCase):
                     with self.subTest(N=N, method=method, three=three):
 
                         ancillas = AncillaManager()
-                        # TODO: could shave off a bit of y register for the multiplication?
                         R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, method, threes=three)
                         circ = cirq.Circuit(circ_gen, strategy=NEW)
                         sim = ToffoliSimulator(circ)
