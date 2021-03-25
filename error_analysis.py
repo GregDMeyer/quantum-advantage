@@ -33,7 +33,7 @@ def error_circuit(circuit, error_rate, rand_seed=None):
         yield op
 
 
-def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
+def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
     gates = list(fast_flatten(circuit))
     x_reg, y_reg = regs
     N = p*q
@@ -154,10 +154,7 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
             print(f'Good mz: {pz:0.5f}')
             print(f'Good mx: {px:0.5f}')
 
-            theta = compute_optimal_theta(
-                pz,
-                px
-            )
+            theta = compute_optimal_theta(fidelity, factor)
 
             print(f'Optimal theta: {theta/pi:0.5f}*pi')
 
@@ -173,15 +170,23 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor):
     return all_data, post_data
 
 
-def compute_optimal_theta(pz, px):
+def compute_optimal_theta(f, factor):
     """
-    compute the optimal measurement angle, given error rates 1-pz and 1-px
-    for Z and X polarized single-qubit states
+    compute the optimal measurement angle, given fidelity f and factor
+    applied for postselection
     """
-    # this was found by computing pm as a function of pz, px, and theta, and
-    # then optimizing by taking the derivative with respect to theta and
-    # finding a root
-    return 0.5*atan((2*px-1)/(2*pz-1))
+    ngood = f
+    f1 = f**(1/3)
+    nphase = (1-f1)*f1**2
+    nerr = 0.25 * (1/(factor**2)) * (1-f1**2)
+
+    ngood, nphase, nerr = [x/(ngood+nphase+nerr) for x in (ngood, nphase, nerr)]
+
+    px = ngood + nphase
+    pmz = ngood + nphase + 0.5*nerr
+    pmx = ngood + 0.5*(nerr + nphase)
+
+    return 0.5*atan((2*pmx-1)/(2*pmz-1))
 
 
 def valid_y(y, p, q, factor):
@@ -278,7 +283,7 @@ def main():
         R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba', threes=args.m)
         circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
 
-    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, 3**args.m)
+    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, 3**args.m, args.f)
     all_data, post_data = results
 
     print()
@@ -286,8 +291,8 @@ def main():
     print_results(all_data)
     print()
 
-    print(f'Results, with post-selection: '
-          f'[{post_data["total"]}/{all_data["total"]} runs]')
+    print('Results, with post-selection: ')
+    print(f'samples: {post_data["total"]}', file=stderr)
     print_results(post_data, use_stderr=True)
     print()
 
