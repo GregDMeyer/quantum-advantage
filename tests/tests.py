@@ -72,30 +72,30 @@ class TestX2modN(unittest.TestCase):
 class TestSubCircuits(unittest.TestCase):
 
     def test_half_adder(self):
-        qubits = cirq.LineQubit.range(3)
+        qubits = cirq.NamedQubit.range(3, prefix="q")
         c = cirq.Circuit(half_adder(*qubits), strategy=NEW)
         sim = ToffoliSimulator(c)
 
         for a, b in product((0, 1), repeat=2):
             with self.subTest(a=a, b=b):
-                init_state = dict(zip(qubits, (a, b, 0)))
-                result = sim.simulate(init_state)
-                ra, rsum, rcout = [result[q] for q in qubits]
+                state = {x.name: v for x, v in zip(qubits, (a, b, 0))}
+                sim.simulate(state)
+                ra, rsum, rcout = [state[q.name] for q in qubits]
 
                 self.assertEqual(ra, a)
                 self.assertEqual(rsum, (a+b)%2)
                 self.assertEqual(rcout, (a+b)//2)
 
     def test_full_adder(self):
-        qubits = cirq.LineQubit.range(4)
+        qubits = cirq.NamedQubit.range(4, prefix="q")
         c = cirq.Circuit(full_adder(*qubits), strategy=NEW)
         sim = ToffoliSimulator(c)
 
         for a, b, cin in product((0, 1), repeat=3):
             with self.subTest(a=a, b=b, cin=cin):
-                init_state = dict(zip(qubits, (a, b, cin, 0)))
-                result = sim.simulate(init_state)
-                ra, rsum, rcin, rcout = [result[q] for q in qubits]
+                state = {x.name: v for x, v in zip(qubits, (a, b, cin, 0))}
+                sim.simulate(state)
+                ra, rsum, rcin, rcout = [state[q.name] for q in qubits]
 
                 self.assertEqual(ra, a)
                 self.assertEqual(rsum, (a+b+cin)%2)
@@ -488,7 +488,7 @@ class TestUtils(unittest.TestCase):
     def test_int_state_conversion(self):
         n = 8
         test_cases = [84, 117, 225]
-        r = cirq.LineQubit.range(n)
+        r = cirq.NamedQubit.range(n, prefix="r")
         for x in test_cases:
             with self.subTest(x=x):
                 self.assertEqual(x, state_to_int(int_to_state(x, r), r))
