@@ -33,6 +33,9 @@ def parse_args():
         if m not in all_methods:
             raise ValueError(f"unrecognized method '{m}'")
 
+    if args.p == 'depth' and not args.d:
+        raise ValueError("Pass the -d flag to plot circuit depth.")
+
     return args
 
 
