@@ -16,6 +16,29 @@ import itertools
 import cirq
 
 
+def x2_mod_N_phase(N, x, y, ancillas, circuit_type):
+    '''
+    Generate the full circuit
+    '''
+    for q in itertools.chain(x, y):
+        yield cirq.H(q)
+
+    if circuit_type == 'fast':
+        yield x2modN_fast(x, y, ancillas, N)
+        yield iqft(y)
+
+    elif circuit_type == 'narrow':
+        for k, yk in enumerate(y):
+            yield x2modN_narrow_single(x, [yk], ancillas, N, len(y)-k-1)
+            yield cirq.H(yk)
+            for m, ym in list(enumerate(y))[k+1:]:
+                phase = -(1/2**(m-k))
+                yield CZpow(phase, ym, yk)
+
+    else:
+        raise ValueError('unknown circuit type')
+
+
 def x2modN_narrow_single(x, y, ancillas, N, bit_idx):
     for i, xi in enumerate(x):
         for j, xj in list(enumerate(x))[i:]:
@@ -89,29 +112,6 @@ def qft(reg):
             phase = 1/2**(m-k)
             yield CZpow(phase, ym, yk)
         yield cirq.H(yk)
-
-
-def x2_mod_N_phase(N, x, y, ancillas, circuit_type):
-    '''
-    Generate the full circuit
-    '''
-    for q in itertools.chain(x, y):
-        yield cirq.H(q)
-
-    if circuit_type == 'fast':
-        yield x2modN_fast(x, y, ancillas, N)
-        yield iqft(y)
-
-    elif circuit_type == 'narrow':
-        for k, yk in enumerate(y):
-            yield x2modN_narrow_single(x, [yk], ancillas, N, len(y)-k-1)
-            yield cirq.H(yk)
-            for m, ym in list(enumerate(y))[k+1:]:
-                phase = -(1/2**(m-k))
-                yield CZpow(phase, ym, yk)
-
-    else:
-        raise ValueError('unknown circuit type')
 
 
 def CZpow(phase, *qubits):
