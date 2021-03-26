@@ -21,8 +21,8 @@ The other two circuits compute the value in the phase, and then transfer it to t
 
 ### Requirements
 
- The code has been tested with Python 3.9, though should be compatible with other recent Python 3 versions. It depends on `Cirq` and a few more libraries (which happen to also be dependencies of `Cirq`, so should be automatically installed). The dependencies can be installed with
- 
+ The code has been tested with Python 3.9, though should be compatible with other recent Python 3 versions. The dependencies can be installed with
+
 ```bash
 pip3 install -r requirements.txt
 ```
@@ -31,7 +31,7 @@ pip3 install -r requirements.txt
 
 #### Implementations
 
-The `circuits` directory contains files containing the functions to generate the circuits, as well as ancillary functions for circuit construction and simulation. 
+The `circuits` directory contains files containing the functions to generate the circuits, as well as ancillary functions for circuit construction and simulation.
 
 In `circuits/digital_circuits.py`, we define functions for generating the quantum circuits based on Karatsuba and schoolbook classical multiplication algorithms.
 
@@ -46,11 +46,11 @@ In the `analysis` directory, there are three scripts:
  - `count_gates.py`: compute gate count, gate depth, and other relevant quantities for each of the implementations
  - `error_analysis.py`: analyze the performance of the quantum advantage protocol when subject to noise, including the performance of the postselection scheme described in the manuscript
  - `optimize_cutoff.py`: optimize the cutoff for recursion in the Karatsuba algorithm
- 
+
 #### Tests
- 
- The `tests` directory contains tests. 
- 
- The "digital" circuits can be tested (using the `unittest` framework) by running `python3 test_digital_circuits.py`. 
- 
+
+ The `tests` directory contains tests.
+
+ The "digital" circuits can be tested (using the `unittest` framework) by running `python3 test_digital_circuits.py`.
+
  The "phase" circuits can be checked using the `check_phase_circuits.py` script, which does not explicitly test anything itself, but outputs the accuracy of the circuit in reproducing the desired state (those circuits are approximate).
