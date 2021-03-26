@@ -140,7 +140,7 @@ def main():
         'fast'
     ]
 
-    header = ['impl', 'n', 'gates', 't_gates', 'qubits']
+    header = ['impl', 'n', 'gates', 't_gates', 'qubits', 'measurements']
     if args.d:
         header.append('depth')
     print(','.join(header))
@@ -180,8 +180,11 @@ def main():
                       "ancillas not discarded", file=stderr)
 
             gates, t_gates, depth = describe(c)
+            meas = ancillas.count_measurements()
+            gates += meas
+
             qubits = len(x_reg) + len(y_reg) + ancillas.max_ancilla_usage()
-            print(f"{impl}, {n}, {gates}, {t_gates}, {qubits}"
+            print(f"{impl}, {n}, {gates}, {t_gates}, {qubits}, {meas}"
                   + (f", {depth}" if args.d else ""))
 
             if args.p != 'off':

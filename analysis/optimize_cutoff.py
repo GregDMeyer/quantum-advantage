@@ -67,8 +67,8 @@ def compare_counts(cutoff, karatsuba, schoolbook):
     ck = karatsuba(cutoff)
     cs = schoolbook(cutoff)
 
-    k_gates, _, _ = describe(fast_flatten(ck))
-    s_gates, _, _ = describe(fast_flatten(cs))
+    k_gates, *_ = describe(fast_flatten(ck))
+    s_gates, *_ = describe(fast_flatten(cs))
 
     return k_gates, s_gates
 

@@ -33,6 +33,7 @@ class AncillaManager:
         self._qubits = []
         self._n_active = 0
         self._max_ancillas = 0
+        self._n_meas = 0
 
     def new(self):
         q = Ancilla(len(self._qubits))
@@ -52,6 +53,7 @@ class AncillaManager:
 
         for qubit in qubits:
             qubit._discard()
+            self._n_meas += 1
 
         self.n_active -= len(qubits)
 
@@ -66,6 +68,9 @@ class AncillaManager:
 
     def max_ancilla_usage(self):
         return self._max_ancillas
+
+    def count_measurements(self):
+        return self._n_meas
 
     @property
     def n_active(self):
