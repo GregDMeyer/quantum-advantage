@@ -1,3 +1,12 @@
+"""
+This script numerically analyzes the effectiveness of the post-selection
+scheme described in the paper associated with this software.
+
+Command-line options and usage can be viewed by passing the `-h` flag
+(or inspecting the parse_args function below).
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 from random import random, randrange, choice, seed
 import argparse

@@ -1,3 +1,16 @@
+"""
+This file contains functions for generating quantum circuits
+implement the classical Karatsuba and schoolbook multiplication
+algorithms. The algorithms take advantage of the fact that the protocol
+for quantum advantage allows discarding of "garbage bits", so
+they do not need to be "uncomputed".
+
+Most of the functions here return generators (an "op tree" in
+the terminology used by Cirq). It can be converted to a Cirq circuit by
+being passed to the cirq.Circuit(op_tree) constructor.
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 from itertools import repeat
 import cirq

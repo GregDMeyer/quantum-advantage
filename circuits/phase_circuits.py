@@ -1,3 +1,16 @@
+"""
+This file contains functions for generating quantum circuits
+for x^2 mod N that compute the function in the phase, and then
+perform an IQFT to transfer the result to a quantum register.
+These circuits are diagrammed in the manuscript associated with
+this software.
+
+The functions here return generators of the circuit's gates (an "op tree"
+in the terminology used by Cirq). It can be converted to a Cirq circuit by
+being passed to the cirq.Circuit(op_tree) constructor.
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 import itertools
 import cirq

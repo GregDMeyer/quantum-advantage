@@ -1,3 +1,13 @@
+"""
+This file contains a class for simulating quantum circuits
+that contain only X, CNOT, and Toffoli gates (as well as
+possibly Y and Z "error" gates), when applied to a product
+state initial state. The simulation is polynomial-time in
+the number of qubits (linear in the number of gates), and
+thus can be applied to very large circuits.
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 import cirq
 

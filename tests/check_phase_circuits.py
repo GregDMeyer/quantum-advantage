@@ -1,3 +1,17 @@
+"""
+This script tests the accuracy of the circuits defined
+in ../circuits/phase_circuits.py. The test simply simulates
+the given circuit and outputs the fraction of the quantum
+population that falls into product states of the form |x>|x^2/N>.
+Because the circuits are "approximate" (due to the inexact
+representation of w=x^2/N=0.w1w2w3... as a binary number),
+the code does not perform any checks on the overlap itself.
+
+Command-line options and usage can be viewed by passing the `-h` flag
+(or inspecting the parse_args function below).
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 from argparse import ArgumentParser
 import cirq

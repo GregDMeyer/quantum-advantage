@@ -1,3 +1,16 @@
+"""
+Karatsuba multiplication is a recursive algorithm, and it is
+generally optimal to switch to a different multiplication method
+at some level of recursion. This script determines the optimal cutoff
+for recursion by generating circuits using various cutoff values
+and comparing circuit sizes to the schoolbook multiplication
+algorithm.
+
+Command-line options and usage can be viewed by passing the `-h` flag
+(or inspecting the parse_args function below).
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 import random
 from argparse import ArgumentParser

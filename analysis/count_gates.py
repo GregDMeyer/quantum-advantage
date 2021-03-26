@@ -1,3 +1,12 @@
+"""
+This script generates circuits for computing x^2 mod N, and counts the number
+of gates in the circuit, as well as gate depth and other useful quantities.
+
+Command-line options and usage can be viewed by passing the `-h` flag
+(or inspecting the parse_args function below).
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 from argparse import ArgumentParser
 from random import randint
@@ -19,7 +28,7 @@ from ancilla import AncillaManager
 def parse_args():
     p = ArgumentParser(description='Count gates for x^2 mod N circuits.')
     p.add_argument('ns', type=lambda lst: [int(x) for x in lst.split(',')],
-                   help='a comma separated list of problem sizes to compute')
+                   help='a comma separated list of problem sizes n=log2(N)')
     p.add_argument('-p', choices=['gates', 'depth', 'off'], default='gates',
                    help='which parameter to plot, or "off"')
     p.add_argument('-d', action='store_true', help='compute depth')

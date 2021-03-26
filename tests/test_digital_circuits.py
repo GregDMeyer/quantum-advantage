@@ -1,3 +1,14 @@
+"""
+This script uses the Python "unittest" module to explicitly
+check correctness of the "digital" quantum circuits for Karatsuba
+and schoolbook multiplication.
+
+By using the polynomial-time quantum simulation defined in
+../circuits/tof_sim.py, correctness is checked for circuits
+consisting of hundreds of qubits.
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 import unittest
 

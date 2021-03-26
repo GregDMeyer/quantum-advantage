@@ -1,6 +1,17 @@
+"""
+This module contains classes for managing ancilla qubits of the
+circuits defined in the other files. Because the protocol this
+code is designed for can discard "garbage" ancilla bits through
+a measurement scheme, the ancilla managers here include the ability
+to both discard ancillas and also re-use ancillas which have
+already been discarded.
+
+(c) Gregory D. Kahanamoku-Meyer 2021
+"""
 
 import cirq
 from tof_sim import int_to_state
+
 
 class Ancilla(cirq.NamedQubit):
 
@@ -14,6 +25,7 @@ class Ancilla(cirq.NamedQubit):
 
     def _discard(self):
         self._isgarbage = True
+
 
 class AncillaManager:
 
