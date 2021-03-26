@@ -50,7 +50,7 @@ def parse_results(results, N, registers):
 
         # make sure we uncomputed everything we needed to
         if anc != 0:
-            assert prob == 0
+            assert prob < 1E-12
 
         k = (true_y, x)
         if k not in rtn:
