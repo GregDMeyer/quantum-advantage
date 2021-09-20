@@ -158,7 +158,7 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
 
     bar.finish()
 
-    # add measurement factor to the m ones
+    # add measurement factor to the CHSH ones
     for d in (all_data, post_data):
         pz = d['good_mz']/d['total']
         px = d['good_mx']/d['total']
@@ -267,7 +267,7 @@ def parse_args():
     parser.add_argument('-q', type=int, required=True, help='prime q')
     parser.add_argument('-f', type=float, required=True, help='circuit fidelity')
     parser.add_argument('--iters', type=int, default=1000, help='number of iterations')
-    parser.add_argument('-m', type=int, default=0, help='number of factors of 3 to include')
+    parser.add_argument('-a', type=int, default=0, help='number of factors of 3 to include')
 
     return parser.parse_args()
 
@@ -293,7 +293,7 @@ def main():
     print(f"N = {trunc_int(N)} = {trunc_int(args.p)}*{trunc_int(args.q)}")
     print(f"n = {n}", file=stderr)
     print(f"f = {args.f}", file=stderr)
-    print(f"m = {args.m}", file=stderr)
+    print(f"a = {args.a}", file=stderr)
 
     x_reg, y_reg = get_registers(n, 1)
     ancillas = AncillaManager()
@@ -304,13 +304,13 @@ def main():
     orig_circuit = circuit
 
     # we want the error rate of the original circuit, but to run on the multiplied one
-    if args.m > 0:
-        x_reg, y_reg = get_registers(n, 3**args.m)
+    if args.a > 0:
+        x_reg, y_reg = get_registers(n, 3**args.a)
         ancillas = AncillaManager()
-        R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba', threes=args.m)
+        R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba', threes=args.a)
         circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
 
-    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, args.p, args.q, R, 3**args.m, args.f)
+    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, args.p, args.q, R, 3**args.a, args.f)
     all_data, post_data = results
 
     print()
