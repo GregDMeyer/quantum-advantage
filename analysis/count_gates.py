@@ -32,6 +32,8 @@ def parse_args():
     p.add_argument('-p', choices=['gates', 'depth', 'off'], default='gates',
                    help='which parameter to plot, or "off"')
     p.add_argument('-d', action='store_true', help='compute depth')
+    p.add_argument('--no-decompose', action='store_true',
+                   help='do not decompose Toffoli into Clifford+T')
 
     all_methods = ['karatsuba', 'schoolbook', 'narrow', 'fast']
     p.add_argument('--methods', type=lambda x: x.split(','), default=all_methods)
@@ -48,7 +50,7 @@ def parse_args():
     return args
 
 
-def describe(c):
+def describe(c, decompose=True):
 
     if not isinstance(c, cirq.Circuit):
         # add one layer of iteration---we are pretending
@@ -65,14 +67,14 @@ def describe(c):
                 tot_gates += op
                 continue
 
-            if op.gate is cirq.TOFFOLI:
+            if decompose and op.gate is cirq.TOFFOLI:
                 tot_gates += 15
                 t_gates += 7
                 has_tof = True
             else:
                 tot_gates += 1
 
-        if has_tof:
+        if decompose and has_tof:
             depth += 12
         else:
             depth += 1
@@ -179,7 +181,7 @@ def main():
                 print(f"qubit memory leak! {ancillas.n_active} "
                       "ancillas not discarded", file=stderr)
 
-            gates, t_gates, depth = describe(c)
+            gates, t_gates, depth = describe(c, not args.no_decompose)
             meas = ancillas.count_measurements()
             gates += meas
 
