@@ -263,7 +263,8 @@ def parse_args():
         description='Estimate success rates with postselection'
     )
 
-    parser.add_argument('-n', type=int, required=True, help='number of bits of N')
+    parser.add_argument('-p', type=int, required=True, help='prime p')
+    parser.add_argument('-q', type=int, required=True, help='prime q')
     parser.add_argument('-f', type=float, required=True, help='circuit fidelity')
     parser.add_argument('--iters', type=int, default=1000, help='number of iterations')
     parser.add_argument('-m', type=int, default=0, help='number of factors of 3 to include')
@@ -271,18 +272,30 @@ def parse_args():
     return parser.parse_args()
 
 
+def trunc_int(x):
+    '''
+    Return a string representing an integer, with ellipsis in the middle if
+    the integer is huge.
+    '''
+    s = str(x)
+    if len(s) < 12:
+        return s
+
+    return s[:4] + '...' + s[-4:]
+
 def main():
     args = parse_args()
 
+    N = args.p*args.q
+    n = N.bit_length()
+
     print("Parameters:")
-    print(f"n = {args.n}", file=stderr)
+    print(f"N = {trunc_int(N)} = {trunc_int(args.p)}*{trunc_int(args.q)}")
+    print(f"n = {n}", file=stderr)
     print(f"f = {args.f}", file=stderr)
     print(f"m = {args.m}", file=stderr)
 
-    p, q = choose_primes(args.n)
-    N = p*q
-
-    x_reg, y_reg = get_registers(args.n, 1)
+    x_reg, y_reg = get_registers(n, 1)
     ancillas = AncillaManager()
     R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba')
     circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
@@ -292,12 +305,12 @@ def main():
 
     # we want the error rate of the original circuit, but to run on the multiplied one
     if args.m > 0:
-        x_reg, y_reg = get_registers(args.n, 3**args.m)
+        x_reg, y_reg = get_registers(n, 3**args.m)
         ancillas = AncillaManager()
         R, circ_gen = x2_mod_N(N, x_reg, y_reg, ancillas, 'karatsuba', threes=args.m)
         circuit = cirq.Circuit(circ_gen, strategy=cirq.InsertStrategy.NEW)
 
-    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, p, q, R, 3**args.m, args.f)
+    results = test_circuit(circuit, (x_reg, y_reg), error_rate, args.iters, args.p, args.q, R, 3**args.m, args.f)
     all_data, post_data = results
 
     print()
