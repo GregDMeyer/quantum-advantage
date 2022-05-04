@@ -59,14 +59,14 @@ def x2modN_fast(x, y, ancillas, N):
     for q in counter:
         yield cirq.H(q)
 
-    for m in range(2*n-1):
-        qubit_pairs = [(i, m-i) for i in range(max(0, m-n+1), m//2 + 1)]
+    for l in range(2*n-1):
+        qubit_pairs = [(i, l-i) for i in range(max(0, l-n+1), l//2 + 1)]
 
         yield count(x, counter, qubit_pairs, sign=+1)
         yield iqft(counter)
 
         for k, ck in enumerate(counter):
-            phase = 2*2**(k+m) / N
+            phase = 2*2**(k+l) / N
             yield phase_add(phase, y, [ck])
 
         # uncompute

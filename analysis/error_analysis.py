@@ -68,8 +68,8 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
     post_data = {
         'total' : 0,
         'good_x': 0,
-        'good_mz': 0,
-        'good_mx': 0,
+        'good_chsh_z': 0,
+        'good_chsh_x': 0,
     }
 
     all_data = deepcopy(post_data)
@@ -125,20 +125,20 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
                     d['total'] += 1
                     if correct:
                         d['good_x'] += 1     # every x case
-                        d['good_mz'] += 1   # Z polarized
+                        d['good_chsh_z'] += 1   # Z polarized
                     else:
-                        d['good_mz'] += 0.5  # Z polarized and lucky
+                        d['good_chsh_z'] += 0.5  # Z polarized and lucky
 
-            # finally, handle the case of m branch, X polarized
+            # finally, handle the case of CHSH branch, X polarized
 
             # first case: both y and x were correct!
             # only possible error is a phase error
             if n_correct == 2:
                 # either neither flipped, or they both did!
                 if combined_phase == 1:
-                    all_data['good_mx'] += 2
+                    all_data['good_chsh_x'] += 2
                     if n_pass == 2:
-                        post_data['good_mx'] += 2
+                        post_data['good_chsh_x'] += 2
 
             # otherwise, at least one y or x was wrong. in this case we will
             # never get a correct superposition, and the single-qubit state
@@ -148,8 +148,8 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
             # also putting a dent into the probability is the fact that if you
             # don't provide a valid y you auto-fail.
             else:
-                all_data['good_mx'] += n_pass*0.5
-                post_data['good_mx'] += n_pass*0.5
+                all_data['good_chsh_x'] += n_pass*0.5
+                post_data['good_chsh_x'] += n_pass*0.5
 
             bar.update(i+1)
 
@@ -160,13 +160,13 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
 
     # add measurement factor to the CHSH ones
     for d in (all_data, post_data):
-        pz = d['good_mz']/d['total']
-        px = d['good_mx']/d['total']
+        pz = d['good_chsh_z']/d['total']
+        px = d['good_chsh_x']/d['total']
 
         if d is post_data:
             print()
-            print(f'Good mz: {pz:0.5f}')
-            print(f'Good mx: {px:0.5f}')
+            print(f'Good CHSH z: {pz:0.5f}')
+            print(f'Good CHSH x: {px:0.5f}')
 
             theta = compute_optimal_theta(fidelity, factor)
 
@@ -178,8 +178,8 @@ def test_circuit(circuit, regs, error_rate, iters, p, q, R, factor, fidelity):
         cz = cos(theta)**2
         cx = cos(theta-pi/4)**2
 
-        d['good_m'] = cz*pz + (1-cz)*(1-pz) + cx*px + (1-cx)*(1-px)
-        d['good_m'] *= d['total']/2
+        d['good_chsh'] = cz*pz + (1-cz)*(1-pz) + cx*px + (1-cx)*(1-px)
+        d['good_chsh'] *= d['total']/2
 
     return all_data, post_data
 
@@ -332,13 +332,13 @@ def main():
 
 
 def print_results(data, use_stderr=False):
-    px = data['good_x'] / data['total']
-    pm = data['good_m'] / data['total']
-    result = px + 4*pm - 4
+    p_x = data['good_x'] / data['total']
+    p_chsh = data['good_chsh'] / data['total']
+    result = p_x + 4*p_chsh - 4
 
-    print(f' px = {px:0.4f}')
-    print(f' pm = {pm:0.4f}')
-    print(' px + 4*pm - 4 = ', end='', flush=True)
+    print(f' p_x = {p_x:0.4f}')
+    print(f' p_chsh = {p_chsh:0.4f}')
+    print(' p_x + 4*p_chsh - 4 = ', end='', flush=True)
 
     result_str = f'{result:0.4f}'
     if use_stderr:

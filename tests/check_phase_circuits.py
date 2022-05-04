@@ -38,9 +38,9 @@ def parse_args():
 
 def parse_results(results, N, registers):
     rtn = {}
-    m = results.state_vector()
+    result_vec = results.state_vector()
 
-    for i,v in enumerate(m):
+    for i,v in enumerate(result_vec):
         x, y, anc = idx_to_vals(i, registers)
         true_y = round(y/(2**len(registers[1])) * N)
         prob = (v*v.conj()).real

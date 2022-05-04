@@ -550,12 +550,11 @@ def montgomery_reduce(T, ancillas, N, mult=None):
     R = 1 << r
     _, Np = extended_gcd(R, N)
 
-    m = ancillas.new_register(r)
-
     # need to put all the generators in a list so we can return R also
     ops = []
 
     # m = Np*T
+    m = ancillas.new_register(r)
     ops.append(mult(Np, T[:r], m, ancillas, allow_overflow=True, C_zero=True))
 
     # T += Nm

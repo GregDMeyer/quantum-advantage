@@ -40,9 +40,9 @@ def parse_args():
 
     args = p.parse_args()
 
-    for m in args.methods:
-        if m not in all_methods:
-            raise ValueError(f"unrecognized method '{m}'")
+    for method in args.methods:
+        if method not in all_methods:
+            raise ValueError(f"unrecognized method '{method}'")
 
     if args.p == 'depth' and not args.d:
         raise ValueError("Pass the -d flag to plot circuit depth.")
@@ -60,9 +60,9 @@ def describe(c, decompose=True):
     depth = 0
     tot_gates = 0
     t_gates = 0
-    for m in c:
+    for moment in c:
         has_tof = False
-        for op in m:
+        for op in moment:
             if isinstance(op, int):
                 tot_gates += op
                 continue
