@@ -4,7 +4,7 @@ This repository contains implementations for four different quantum circuits tha
 
 𝒰\|*x*⟩\|0⟩ = \|*x*⟩\|*x*<sup>2</sup> mod *N*⟩.
 
-This unitary is the key step in the "proof of quantumness" protocol described in this paper: [link forthcoming].
+This unitary is the key step in the "proof of quantumness" protocol described in this paper: [arXiv:2104.00687](https://arxiv.org/abs/2104.00687).
 
 The repository also contains code for analyzing the circuits.
 
